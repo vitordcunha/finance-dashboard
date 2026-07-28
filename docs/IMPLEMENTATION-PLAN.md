@@ -502,6 +502,60 @@ O sistema está completo o bastante para largar planilha paralela quando:
 
 ---
 
+## Canal Telegram + GPT (paralelo às fases 0–15)
+
+Captura pelo Telegram (comandos, texto livre, foto de cupom). Não bloqueia o mínimo completo do painel.
+
+### Tarefas
+- [x] Migration: `telegram_links`, `telegram_link_codes`, `capture_drafts`, `source=telegram`
+- [x] `src/core/capture/` + testes (draft, cheap-parse, hints)
+- [x] Edge Function `supabase/functions/telegram-bot` (webhook, vínculo, GPT texto/vision, confirmar, desfazer)
+- [x] Settings → Telegram (gerar código, defaults, desvincular)
+- [x] Docs: `TELEGRAM.md`, DATA-MODEL, DEPLOY, ARCHITECTURE
+
+### Aceite
+- [ ] Migration aplicada no projeto Supabase
+- [ ] Function deployada + webhook + secrets (`TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`)
+- [ ] Membros vinculam via Settings e `/start CODIGO`
+- [ ] `/saida 35,90 café` → confirmar → aparece no painel (`amount_cents` ok)
+- [ ] Foto de cupom → rascunho → confirmar (sem gravar automático)
+- [ ] `/desfazer` remove o último do bot
+- [ ] Nenhuma key OpenAI/Telegram no bundle Vercel
+
+### Fora de escopo (v1)
+Fatura, import OFX, plano/séries, consultas “como está o mês”, áudio.
+
+Setup operacional: `docs/TELEGRAM.md`.
+
+### Telegram v1.1 — Fluidez (paralelo)
+- [x] Typing + editar mensagem + limpar teclado
+- [x] Preview rico (conta/categoria/data/quem)
+- [x] Cache curto de contexto household
+- [x] Cheap-parse ampliado + auto-confirm (≥ 0,95)
+- [x] Correção por reply na preview
+
+### Telegram v1.2 — Captura mais rica
+- [x] Teclado Conta / Categoria / Data
+- [x] Aprende `categorization_rules` ao mudar categoria
+- [x] `/ultimo` + valor
+- [x] Caption hints na foto
+- [x] Batch multi-linha
+- [x] PDF de cupom/NF (confirmação obrigatória)
+
+### Telegram v1.3 — Canal avançado
+- [x] Áudio (Whisper)
+- [x] Cupom multi-item (botão Itens)
+- [x] Parcelas Nx (`installment_group`)
+- [x] Transferência real + Destino
+- [x] Enrich híbrido (cheap trava valor; LLM categoriza)
+
+### Telegram v1.4 — Assistente
+- [x] `/mes`, `/saldo`, `/cota` (`src/core/assistant/` + handlers no bot)
+- [x] Digest fatura (`?action=digest`, migration `telegram_digest_log`)
+- Notificação in-app do parceiro: **fora de escopo** (descartado)
+
+---
+
 ## Mapeamento do plano antigo → novo
 
 | Antigo | Novo |

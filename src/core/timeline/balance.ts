@@ -18,8 +18,20 @@ export type TimelineDay = {
   events: TimelineEvent[];
   inCents: number;
   outCents: number;
-  /** Saldo no fim do dia. */
+  /**
+   * Saldo no fim do dia — só lançamentos (realizado + previsto).
+   *
+   * O estimado **não** entra aqui: é alerta, não compromisso. O herói e a curva
+   * principal leem este número.
+   */
   balanceCents: number;
+  /**
+   * Saldo se o variável estimado se concretizar.
+   *
+   * Mesma âncora e mesmos lançamentos, mais o gotejamento do forecast. Serve à
+   * curva/faixa de alerta — nunca ao "livre para gastar".
+   */
+  balanceWithEstimateCents: number;
   hasPlanned: boolean;
 };
 
@@ -27,15 +39,23 @@ export type TimelineMonth = {
   ym: YearMonth;
   days: TimelineDay[];
   openingCents: number;
+  /**
+   * Fechamento só com lançamentos — sem o estimado.
+   *
+   * Abertura do mês seguinte = este número. Estimar o variável de agosto não
+   * pode roubar a abertura de setembro: o chute não é caixa.
+   */
   closingCents: number;
+  /** Fechamento se o estimado do mês se concretizar. Alerta, não âncora. */
+  closingWithEstimateCents: number;
   inCents: number;
-  /** Toda saída do mês, inclusive estimado — fecha o saldo. */
+  /** Toda saída do mês, inclusive estimado. */
   outCents: number;
   /** Saída de lançamentos (realizado + previsto), sem o estimado. */
   bookedOutCents: number;
   /** Saída sintética do `forecast` (mediana do histórico). */
   estimatedOutCents: number;
-  /** closing − opening. O que sobrou (ou faltou) no mês. */
+  /** closing − opening. O que sobrou (ou faltou) no mês — sem estimado. */
   netCents: number;
   /** Algum dia do mês tem evento previsto. */
   hasPlanned: boolean;
@@ -72,12 +92,18 @@ export function groupTimeline(input: {
     else byDate.set(event.date, [event]);
   }
 
+  // Duas correntes: a real (só lançamentos) carrega mês a mês; a com estimado
+  // também, para o alerta acumular — mas só a real vira abertura do próximo.
   let running = input.anchorCents;
+  let runningWithEstimate = input.anchorCents;
   const out: TimelineMonth[] = [];
 
   for (const ym of input.months) {
     const { start, end } = monthRange(ym);
     const openingCents = running;
+    // O estimado do mês anterior não contamina a abertura: o alerta recomeça
+    // do caixa real. Sem isso, um chute de agosto roubava setembro inteiro.
+    runningWithEstimate = running;
 
     const dates = [...byDate.keys()]
       .filter((d) => d >= start && d <= end)
@@ -105,7 +131,13 @@ export function groupTimeline(input: {
           else bookedOutCents += abs;
         }
         if (event.kind !== 'actual') dayPlanned = true;
-        running += event.deltaCents;
+        // Estimado só na corrente de alerta.
+        if (event.kind === 'forecast') {
+          runningWithEstimate += event.deltaCents;
+        } else {
+          running += event.deltaCents;
+          runningWithEstimate += event.deltaCents;
+        }
       }
 
       inCents += dayIn;
@@ -118,6 +150,7 @@ export function groupTimeline(input: {
         inCents: dayIn,
         outCents: dayOut,
         balanceCents: running,
+        balanceWithEstimateCents: runningWithEstimate,
         hasPlanned: dayPlanned,
       });
     }
@@ -127,6 +160,7 @@ export function groupTimeline(input: {
       days,
       openingCents,
       closingCents: running,
+      closingWithEstimateCents: runningWithEstimate,
       inCents,
       outCents,
       bookedOutCents,

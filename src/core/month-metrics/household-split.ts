@@ -102,18 +102,55 @@ export function householdSplit(input: {
     outflowSignatures.set(sig, set);
   }
 
+  // Entradas espelhadas — para achar a saída de rateio mesmo quando a parcela
+  // avulsa não tem `seriesId` (parcela 2 era `recurrence: none` e sumia do
+  // "agendado", deixando o card acusar falta eterna).
+  const inflowSignatures = new Map<string, Set<string>>();
+  for (const event of events) {
+    if (event.kind === 'forecast' || event.flow !== 'income') continue;
+    const owner = ownerOf(event.accountId);
+    if (!owner) continue;
+    const sig = internalSignature(event.date, event.nominalCents, event.label);
+    const set = inflowSignatures.get(sig) ?? new Set<string>();
+    set.add(owner);
+    inflowSignatures.set(sig, set);
+  }
+
+  const isMirroredOut = (
+    date: string,
+    cents: number,
+    label: string,
+    owner: string,
+  ) => {
+    const mirrored = inflowSignatures.get(internalSignature(date, cents, label));
+    return Boolean(mirrored && [...mirrored].some((o) => o !== owner));
+  };
+
+  // Entradas espelhadas recebidas, por dono — o reembolso reduz o ônus de quem
+  // pagou a conta na própria conta.
+  const mirroredInByOwner = new Map<string, number>();
+
   for (const day of month.days) {
     for (const event of day.events) {
       if (event.kind === 'forecast') continue;
       const owner = ownerOf(event.accountId);
 
       if (event.flow === 'income') {
-        // Só recorrência: salário é peso, bônus e reembolso não.
-        if (!event.seriesId || !owner) continue;
+        if (!owner) continue;
         const mirrored = outflowSignatures.get(
           internalSignature(event.date, event.nominalCents, event.label),
         );
-        if (mirrored && [...mirrored].some((o) => o !== owner)) continue;
+        if (mirrored && [...mirrored].some((o) => o !== owner)) {
+          // Rateio recebido: alivia o ônus de quem recebe — inclusive parcela
+          // avulsa sem seriesId.
+          mirroredInByOwner.set(
+            owner,
+            (mirroredInByOwner.get(owner) ?? 0) + event.nominalCents,
+          );
+          continue;
+        }
+        // Só recorrência: salário é peso, bônus e reembolso não.
+        if (!event.seriesId) continue;
         fixedIncome.set(
           owner,
           (fixedIncome.get(owner) ?? 0) + event.nominalCents,
@@ -122,16 +159,31 @@ export function householdSplit(input: {
       }
 
       if (event.nominalCents >= 0) continue;
+      const abs = -event.nominalCents;
+      const mirrored =
+        owner != null &&
+        isMirroredOut(event.date, event.nominalCents, event.label, owner);
+
+      // Rateio pago: ônus de quem reembolsa. Não entra no pote a dividir.
+      if (mirrored) {
+        if (owner) {
+          scheduledOut.set(owner, (scheduledOut.get(owner) ?? 0) + abs);
+        }
+        continue;
+      }
+
       if (!isCommitment(event, essential)) continue;
 
-      houseCostCents += -event.nominalCents;
+      houseCostCents += abs;
       if (owner) {
-        scheduledOut.set(
-          owner,
-          (scheduledOut.get(owner) ?? 0) + -event.nominalCents,
-        );
+        scheduledOut.set(owner, (scheduledOut.get(owner) ?? 0) + abs);
       }
     }
+  }
+
+  // Ônus líquido: quem pagou a conta na própria conta menos o rateio que recebeu.
+  for (const [personId, received] of mirroredInByOwner) {
+    scheduledOut.set(personId, (scheduledOut.get(personId) ?? 0) - received);
   }
 
   const totalFixedIncomeCents = [...fixedIncome.values()].reduce(
@@ -157,10 +209,10 @@ export function householdSplit(input: {
     })
     .sort((a, b) => b.weightBps - a.weightBps);
 
-  // Rateio em vigor = pelo menos duas pessoas com compromisso saindo da conta.
-  // Com uma só, o mês simplesmente não tem divisão combinada.
+  // Rateio em vigor = alguém pagou e alguém recebeu o par espelhado.
   const hasContribution =
-    people.filter((p) => p.scheduledOutCents > 0).length >= 2;
+    mirroredInByOwner.size > 0 &&
+    people.some((p) => (scheduledOut.get(p.personId) ?? 0) > 0);
 
   const worstDriftCents = hasContribution
     ? people.reduce(

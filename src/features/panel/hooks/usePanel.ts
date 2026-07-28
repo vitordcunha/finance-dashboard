@@ -73,7 +73,12 @@ export type PanelResult = {
   accountOwnerById: Map<string, string | null>;
   personNameById: Map<string, string>;
   /** Categorias de despesa, para o seletor de categorização em lote. */
-  expenseCategories: { id: string; name: string }[];
+  expenseCategories: {
+    id: string;
+    name: string;
+    essential: boolean;
+    color: string | null;
+  }[];
   /** Ocorrência por id de evento — a edição precisa dela, não do evento. */
   occurrenceById: Map<string, Occurrence>;
   /** Linha-modelo por id de série. */
@@ -361,7 +366,12 @@ export function usePanel(options: UsePanelOptions = {}): PanelResult {
     () =>
       (categoriesQuery.data ?? [])
         .filter((c) => c.kind === 'expense')
-        .map((c) => ({ id: c.id, name: c.name })),
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          essential: c.essential,
+          color: c.color,
+        })),
     [categoriesQuery.data],
   );
 

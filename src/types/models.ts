@@ -10,7 +10,7 @@ export type MoneyCents = number;
 
 export type TransactionKind = 'income' | 'expense' | 'transfer';
 
-export type TransactionSource = 'manual' | 'import' | 'recurring';
+export type TransactionSource = 'manual' | 'import' | 'recurring' | 'telegram';
 
 /** `skipped` é marcador: a ocorrência daquele mês da série foi cancelada. */
 export type TransactionStatus = 'actual' | 'planned' | 'skipped';

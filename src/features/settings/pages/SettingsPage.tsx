@@ -13,6 +13,7 @@ import { AccountsSection } from '@/features/settings/components/AccountsSection'
 import { CategoriesSection } from '@/features/settings/components/CategoriesSection';
 import { ContributionModeSection } from '@/features/settings/components/ContributionModeSection';
 import { PeopleSection } from '@/features/settings/components/PeopleSection';
+import { TelegramSection } from '@/features/settings/components/TelegramSection';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Panel } from '@/components/ui/Panel';
@@ -33,7 +34,7 @@ export function SettingsPage() {
       <PageHeader
         eyebrow="Mais"
         title="Configurações"
-        description="Pessoas, contas, saldos reais, categorias e cota da casa."
+        description="Pessoas, contas, Telegram, saldos reais, categorias e cota da casa."
       />
 
       <Panel className="md:hidden">
@@ -62,6 +63,7 @@ export function SettingsPage() {
       </Panel>
 
       <PeopleSection />
+      <TelegramSection />
       <AccountsSection />
       <BalancesSection />
       <CategoriesSection />

@@ -174,24 +174,30 @@ export function PanelPage() {
   /**
    * Fundo do poço no cenário em vigor e no do histórico.
    *
-   * Os dois saem dos mesmos `points`: a curva já embute a taxa em vigor, e o
-   * cenário base é ela deslocada pela diferença de taxa. Recalcular a timeline
-   * duas vezes daria o mesmo resultado por um preço maior.
+   * A curva base (`points`) é só lançamentos. O estimado entra como `delta`
+   * diário — o simulador aplica a taxa escolhida; o baseline aplica a mediana.
    */
   const lowestAheadNow = useMemo(
-    () => (points ? lowestAheadAtRate(points, 0, isFuture ? ym + '-01' : today) : null),
-    [points, today, isFuture, ym],
+    () =>
+      points
+        ? lowestAheadAtRate(
+            points,
+            activeDailyCents,
+            isFuture ? ym + '-01' : today,
+          )
+        : null,
+    [points, activeDailyCents, today, isFuture, ym],
   );
   const baselineLowestAhead = useMemo(
     () =>
       points
         ? lowestAheadAtRate(
             points,
-            baselineDailyCents - activeDailyCents,
+            baselineDailyCents,
             isFuture ? ym + '-01' : today,
           )
         : null,
-    [points, baselineDailyCents, activeDailyCents, today, isFuture, ym],
+    [points, baselineDailyCents, today, isFuture, ym],
   );
 
   /**
@@ -514,6 +520,7 @@ export function PanelPage() {
           {uncategorized.groups.length > 0 ? (
             <UncategorizedSection
               groups={uncategorized.groups}
+              ym={ym}
               totalCents={uncategorized.totalCents}
               monthOutCents={
                 month.bookedOutCents - (metrics.settlementOutCents ?? 0)
@@ -550,7 +557,14 @@ export function PanelPage() {
             onSelectMonth={setSelectedYm}
           />
 
-          <CategoryBars month={month} categoryNameById={categoryNameById} />
+          <CategoryBars
+            month={month}
+            categoryNameById={categoryNameById}
+            onSelectEvent={(event) => {
+              const occurrence = occurrenceById.get(event.id);
+              if (occurrence) setEditing(occurrence);
+            }}
+          />
 
           <section className="overflow-hidden rounded-xl border border-border bg-surface">
             <button

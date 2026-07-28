@@ -50,6 +50,7 @@ Ver `docs/AI-WORKFLOW.md`. Resumo:
 | `docs/IMPLEMENTATION-PLAN.md` | Fases e aceite |
 | `docs/AI-WORKFLOW.md` | Como a IA deve executar tarefas |
 | `docs/DEPLOY.md` | Publicar front na Vercel |
+| `docs/TELEGRAM.md` | Bot de captura + GPT (Edge Function) |
 
 ## Estado do código
 

@@ -25,7 +25,7 @@ export type BandPoint = {
 
 export function projectionBand(input: {
   points: ReadonlyArray<DayPoint>;
-  /** Estimado por dia embutido na curva central. */
+  /** Estimado por dia embutido na curva de alerta (`balanceWithEstimate`). */
   centralDailyCents: number;
   lowDailyCents: number;
   highDailyCents: number;
@@ -43,10 +43,13 @@ export function projectionBand(input: {
 
   for (const p of points) {
     if (p.projected) projected += 1;
+    // A faixa envolve a curva **com estimado** (alerta), não a curva real.
+    // A real é compromisso; a faixa responde "e se o variável vier assim".
+    const center = p.balanceWithEstimateCents;
     out.push({
       day: p.day,
-      lowCents: p.balanceCents - over * projected,
-      highCents: p.balanceCents + under * projected,
+      lowCents: center - over * projected,
+      highCents: center + under * projected,
     });
   }
 
@@ -56,13 +59,13 @@ export function projectionBand(input: {
 /**
  * Menor saldo à frente se a taxa diária do variável mudasse.
  *
- * `deltaPerDayCents` positivo = gastando **mais** por dia. Mesma aritmética da
- * faixa: entre dois cenários só muda o variável, então a diferença até um dia é
- * `delta × dias projetados até ali`. Serve ao simulador — sem isso ele mostraria
- * o novo fundo do poço sem nada para comparar, e "R$ 730" não diz se melhorou.
+ * `deltaPerDayCents` positivo = gastando **mais** por dia **além** da curva
+ * base (`points.balanceCents`, só lançamentos). Mesma aritmética da faixa:
+ * a diferença até um dia é `delta × dias projetados até ali`.
  *
- * O dia do fundo pode mudar de lugar, e é por isso que não dá para só somar no
- * mínimo antigo: com ritmo alto o poço migra para o fim do mês.
+ * O simulador aplica a taxa escolhida sobre o caixa real — o estimado do
+ * histórico não está na curva base, então `delta = estimado/dia` reproduz o
+ * cenário de alerta.
  */
 export function lowestAheadAtRate(
   points: ReadonlyArray<DayPoint>,

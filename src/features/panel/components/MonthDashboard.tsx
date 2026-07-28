@@ -24,6 +24,10 @@ type Props = {
 export function MonthDashboard({ month, isCurrent, isFuture }: Props) {
   const negative = month.netCents < 0;
   const closingNegative = month.closingCents < 0;
+  const estimateGap =
+    month.estimatedOutCents > 0
+      ? month.closingCents - month.closingWithEstimateCents
+      : 0;
 
   return (
     <section className="rounded-xl border border-border bg-surface">
@@ -50,6 +54,15 @@ export function MonthDashboard({ month, isCurrent, isFuture }: Props) {
           <Delta negative={negative} cents={month.netCents} />
           <span className="h-px flex-1 bg-border-strong" />
         </div>
+        {estimateGap > 0 ? (
+          <p className="mt-3 border-t border-border/70 pt-2 text-[11px] leading-snug text-text-muted">
+            Se mantiver o ritmo, fecha perto de{' '}
+            <span className="tabular-nums text-text">
+              <MoneyText cents={month.closingWithEstimateCents} className="text-[11px]" />
+            </span>
+            {' '}— o estimado não entra no número acima.
+          </p>
+        ) : null}
       </div>
 
     </section>

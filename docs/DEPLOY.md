@@ -6,7 +6,9 @@ O app é um **SPA Vite**. A Vercel serve o front estático; o **Supabase** conti
 Browser → Vercel (dist/) → Supabase (API / Auth)
 ```
 
-Não há backend próprio na Vercel. Nunca coloque `service_role` / `sb_secret_...` nas env vars do front.
+Não há backend próprio na Vercel. Nunca coloque `service_role` / `sb_secret_...` / `OPENAI_API_KEY` / `TELEGRAM_BOT_TOKEN` nas env vars do front.
+
+Edge Functions (ex.: bot Telegram) vivem no **Supabase**, com secrets no projeto Supabase — ver [TELEGRAM.md](./TELEGRAM.md).
 
 ---
 

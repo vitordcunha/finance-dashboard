@@ -14,8 +14,16 @@ export type DayPoint = {
   date: string;
   /** Dia do mês, 1–31. */
   day: number;
-  /** Saldo no fim do dia. */
+  /**
+   * Saldo no fim do dia — só lançamentos (realizado + previsto).
+   * Fonte do herói e da curva principal.
+   */
   balanceCents: number;
+  /**
+   * Saldo se o variável estimado se concretizar.
+   * Fonte da curva/faixa de alerta — nunca do "livre para gastar".
+   */
+  balanceWithEstimateCents: number;
   inCents: number;
   outCents: number;
   hasEvents: boolean;
@@ -43,17 +51,22 @@ export function dailySeries(input: DailySeriesInput): DayPoint[] {
   const out: DayPoint[] = [];
 
   let balance = month.openingCents;
+  let balanceWithEstimate = month.openingCents;
   const lastDay = Number(end.slice(8, 10));
 
   for (let day = 1; day <= lastDay; day++) {
     const date = `${start.slice(0, 8)}${String(day).padStart(2, '0')}`;
     const hit = byDate.get(date);
-    if (hit) balance = hit.balanceCents;
+    if (hit) {
+      balance = hit.balanceCents;
+      balanceWithEstimate = hit.balanceWithEstimateCents;
+    }
 
     out.push({
       date,
       day,
       balanceCents: balance,
+      balanceWithEstimateCents: balanceWithEstimate,
       inCents: hit?.inCents ?? 0,
       outCents: hit?.outCents ?? 0,
       hasEvents: Boolean(hit),

@@ -88,5 +88,7 @@ describe('uncategorizedGroups', () => {
     ]);
     expect(group!.count).toBe(2);
     expect(group!.label).toBe('N T DELL OSBEL MINIMER PORTO ALEGRE  BRA');
+    expect(group!.samples[0]).toBe(group!.label);
+    expect(group!.samples).toContain('N.T. DELL OSBEL-MINIM');
   });
 });

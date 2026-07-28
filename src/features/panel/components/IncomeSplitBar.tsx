@@ -16,12 +16,19 @@ type Props = {
  * fatia própria porque é a única parte sobre a qual dá para agir hoje.
  *
  * Part-to-whole, então **um tom em quatro intensidades** — a cor não carrega
- * identidade, o rótulo ao lado carrega. `livre` é a exceção: ganha o acento
- * porque é a resposta, não mais uma parcela.
+ * identidade, o rótulo ao lado carrega. `sobra` é a exceção: ganha o acento
+ * porque é a resposta, não mais uma parcela. Mesma fatia do rodapé do herói
+ * (`income.freeCents`) — aqui com o contexto do restante da barra.
  */
 export function IncomeSplitBar({ income }: Props) {
-  const { incomeCents, fixedCents, settlementCents, variableCents, freeCents } =
-    income;
+  const {
+    incomeCents,
+    fixedCents,
+    settlementCents,
+    variableCents,
+    estimatedCents,
+    freeCents,
+  } = income;
   const committedPct = income.committedBps / 100;
   const negative = freeCents < 0;
 
@@ -31,7 +38,7 @@ export function IncomeSplitBar({ income }: Props) {
     { key: 'variable', label: 'Variável', cents: variableCents, fill: 'bg-expense/28' },
     {
       key: 'free',
-      label: negative ? 'Faltou' : 'Livre',
+      label: negative ? 'Faltou' : 'Sobra',
       cents: Math.abs(freeCents),
       fill: negative ? 'bg-danger/70' : 'bg-accent/70',
     },
@@ -117,6 +124,13 @@ export function IncomeSplitBar({ income }: Props) {
       {negative ? (
         <p className="mt-2 border-t border-border/70 pt-2 text-[11px] leading-snug text-danger">
           O mês gasta mais do que entra — a diferença sai do saldo que já existia.
+        </p>
+      ) : estimatedCents > 0 ? (
+        <p className="mt-2 border-t border-border/70 pt-2 text-[11px] leading-snug text-text-muted">
+          Estimado à parte:{' '}
+          <span className="tabular-nums text-text">{formatBRL(estimatedCents)}</span>
+          {' '}de variável histórico — alerta, não compromisso. Não come a sobra
+          do mês.
         </p>
       ) : null}
     </div>

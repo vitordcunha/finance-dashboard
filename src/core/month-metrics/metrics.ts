@@ -33,13 +33,20 @@ export type MonthMetrics = {
   daysUntilBelow: number | null;
 
   /**
-   * Quanto dá para gastar sem furar o colchão até o fim do mês.
+   * Folga de caixa: quanto dá para gastar sem furar o colchão até o fim do mês.
    *
-   * É `menor saldo daqui pra frente − colchão`, não `saldo hoje − contas`: o
-   * menor saldo já embute tudo que entra e sai até lá, inclusive o salário que
-   * chega depois do aluguel.
+   * É `menor saldo daqui pra frente − colchão`, só com **lançamentos**
+   * (realizado + previsto). O estimado do histórico **não** entra — é alerta,
+   * não compromisso. O menor saldo já embute o timing (salário depois do
+   * aluguel). Não é `renda − contas` bruto — essa é `income.freeCents`
+   * (sobra do mês), exibida ao lado no herói.
    */
   freeToSpendCents: number | null;
+  /**
+   * Folga se o variável estimado se concretizar — alerta paralelo ao herói.
+   * Null quando não há estimado à frente.
+   */
+  freeToSpendWithEstimateCents: number | null;
   /** O mesmo, dividido pelos dias que faltam. */
   safeDailyCents: number | null;
   daysLeft: number;
@@ -80,10 +87,10 @@ export type MonthMetrics = {
    */
   paceGapCents: number | null;
   /**
-   * Quantos dias a folga (`freeToSpend`) aguenta o excesso sobre o estimado.
+   * Quantos dias a folga (`freeToSpend`, só compromissos) aguenta o ritmo.
    *
-   * O livre já embute o estimado na timeline — não se divide `free / burn`.
-   * Só o surplus (`burn − estimatedDaily`) come a folga de verdade.
+   * Como o livre **não** embute o estimado, divide-se pelo ritmo cheio — é o
+   * alerta "se mantiver R$ X/dia, a folga acaba em N dias".
    */
   headroomBurnDays: number | null;
 
@@ -122,9 +129,15 @@ export type IncomeSplit = {
   fixedCents: number;
   /** Pagamento de fatura. */
   settlementCents: number;
-  /** Variável — realizado no mês mais o estimado que ainda vem. */
+  /** Variável lançado (realizado + previsto avulso) — sem o estimado. */
   variableCents: number;
-  /** O que resta depois de tudo. Negativo quando o mês gasta mais do que entra. */
+  /** Estimado do histórico, à parte: alerta, não fatia do "livre". */
+  estimatedCents: number;
+  /**
+   * Sobra do mês: renda − compromisso − fatura − variável lançado.
+   * O estimado **não** come esta fatia — mora no alerta.
+   * Sem timing — diferente da folga de caixa (`freeToSpendCents`).
+   */
   freeCents: number;
   /** (compromisso + fatura) ÷ entrada, em basis points. */
   committedBps: number;
@@ -155,7 +168,8 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
   const isFuture = start > today;
   const events = allEvents(month);
 
-  const ahead = isPast ? null : lowestAhead(points, isFuture ? start : today);
+  const from = isFuture ? start : today;
+  const ahead = isPast ? null : lowestAhead(points, from);
 
   // Dias que ainda contam para diluir o que sobrou. Mês futuro conta inteiro.
   const remaining = points.filter((p) =>
@@ -165,6 +179,19 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
 
   const freeToSpendCents =
     ahead == null ? null : ahead.balanceCents - minimumCents;
+
+  // Menor saldo à frente na corrente com estimado — alerta, não herói.
+  let freeToSpendWithEstimateCents: number | null = null;
+  if (!isPast) {
+    let bestEst: number | null = null;
+    for (const p of points) {
+      if (p.date < from) continue;
+      if (bestEst == null || p.balanceWithEstimateCents < bestEst) {
+        bestEst = p.balanceWithEstimateCents;
+      }
+    }
+    if (bestEst != null) freeToSpendWithEstimateCents = bestEst - minimumCents;
+  }
 
   const safeDailyCents =
     freeToSpendCents == null || daysLeft === 0 || freeToSpendCents <= 0
@@ -269,20 +296,14 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
       ? dailyBurnCents - estimatedDailyCents
       : null;
 
-  // Folga já assume o estimado. Só o excesso sobre ele come headroom.
+  // Livre = só compromissos. O ritmo cheio come a folga.
   let headroomBurnDays: number | null = null;
   if (
     freeToSpendCents != null &&
     freeToSpendCents > 0 &&
     dailyBurnCents > 0
   ) {
-    const surplus =
-      estimatedDailyCents > 0
-        ? dailyBurnCents - estimatedDailyCents
-        : dailyBurnCents;
-    if (surplus > 0) {
-      headroomBurnDays = Math.floor(freeToSpendCents / surplus);
-    }
+    headroomBurnDays = Math.floor(freeToSpendCents / dailyBurnCents);
   }
 
   return {
@@ -293,6 +314,7 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
     firstBelowAhead,
     daysUntilBelow,
     freeToSpendCents,
+    freeToSpendWithEstimateCents,
     safeDailyCents,
     daysLeft,
     committedAheadCents,
@@ -322,7 +344,8 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
       month.inCents,
       fixedOutCents,
       settlementOutCents,
-      variableOutCents + estimatedOutCents,
+      variableOutCents,
+      estimatedOutCents,
     ),
   };
 }
@@ -332,6 +355,7 @@ function incomeSplit(
   fixedCents: number,
   settlementCents: number,
   variableCents: number,
+  estimatedCents: number,
 ): IncomeSplit | null {
   if (incomeCents <= 0) return null;
   return {
@@ -339,6 +363,7 @@ function incomeSplit(
     fixedCents,
     settlementCents,
     variableCents,
+    estimatedCents,
     freeCents: incomeCents - fixedCents - settlementCents - variableCents,
     committedBps: Math.round(
       ((fixedCents + settlementCents) / incomeCents) * 10_000,

@@ -49,6 +49,7 @@ Proibido: `features/x` importar `features/y` em cadeia profunda. Compartilhar vi
 | Datas | date-fns; mês de competência = `yyyy-MM` |
 | Testes | Vitest (`src/core/**/*.test.ts`) |
 | Mobile depois | Capacitor (não na base) |
+| Captura Telegram | Edge Function + GPT (opcional; ver `docs/TELEGRAM.md`) |
 
 ## Estrutura de pastas alvo
 
@@ -82,7 +83,9 @@ finance-panel/
 │   │   ├── reconcile/
 │   │   ├── transactions/
 │   │   ├── import/
-│   │   └── categorization/
+│   │   ├── categorization/
+│   │   ├── capture/      # draft / cheap-parse / hints (bot + testes)
+│   │   └── assistant/    # digests /mes /saldo /cota + fatura (bot)
 │   ├── data/
 │   │   ├── supabase/
 │   │   ├── query-keys.ts
@@ -95,7 +98,8 @@ finance-panel/
 │   │   ├── statements.ts
 │   │   ├── goals.ts
 │   │   ├── imports.ts
-│   │   └── month-close.ts
+│   │   ├── month-close.ts
+│   │   └── telegram.ts
 │   ├── features/
 │   │   ├── auth/
 │   │   ├── panel/        # a aplicação: um mês por vez

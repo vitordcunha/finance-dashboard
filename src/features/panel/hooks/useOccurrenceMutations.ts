@@ -8,7 +8,7 @@ import {
   type DeleteOccurrenceInput,
   type SaveOccurrenceInput,
 } from '@/data/series';
-import { createTransaction } from '@/data/transactions';
+import { createTransaction, deleteTransaction } from '@/data/transactions';
 import { useHousehold } from '@/features/auth/hooks/useHousehold';
 import type { CreateTransactionInput } from '@/types/models';
 
@@ -54,13 +54,23 @@ export function useCreateEntry() {
       createTransaction({ ...input, householdId: householdId! }),
     onSuccess: (tx) => {
       invalidate();
-      toast.success(
+      const message =
         tx.recurrence === 'monthly'
           ? 'Lançamento criado — repete todo mês'
           : tx.status === 'planned'
             ? 'Lançamento previsto criado'
-            : 'Lançamento criado',
-      );
+            : 'Lançamento criado';
+      toast.success(message, {
+        action: {
+          label: 'Desfazer',
+          onClick: () => {
+            void deleteTransaction(tx.id).then(() => {
+              invalidate();
+              toast.message('Lançamento desfeito');
+            });
+          },
+        },
+      });
     },
     onError: (error: Error) => toast.error(error.message),
   });

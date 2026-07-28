@@ -301,9 +301,9 @@ describe('monthMetrics', () => {
     expect(mm.daysUntilBelow).toBe(0);
   });
 
-  it('headroomBurnDays usa só o excesso sobre o estimado', () => {
-    // Livre 10.000; ritmo e estimado forçados via mês com variável realizado
-    // e forecast à frente. Surplus 1.000 → 10 dias.
+  it('headroomBurnDays divide a folga pelo ritmo cheio', () => {
+    // Livre = só compromissos. Ritmo come a folga inteira (estimado não está
+    // embutido no herói).
     const events = buildTimelineEvents({
       occurrences: [
         // 15 dias × ~2.000/dia variável = 30.000 → burn 2.000
@@ -317,7 +317,7 @@ describe('monthMetrics', () => {
       ],
       months: ['2026-07'],
       today: '2026-07-15',
-      forecastMonthlyCents: 31_000, // ~1.000/dia no restante (16 dias * ~)
+      forecastMonthlyCents: 31_000,
     });
     const m = groupTimeline({
       events,
@@ -334,19 +334,75 @@ describe('monthMetrics', () => {
 
     expect(mm.dailyBurnCents).toBeGreaterThan(0);
     expect(mm.estimatedDailyCents).toBeGreaterThan(0);
-    expect(mm.paceGapCents).toBe(
-      mm.dailyBurnCents - mm.estimatedDailyCents,
-    );
-    if (
-      mm.freeToSpendCents != null &&
-      mm.freeToSpendCents > 0 &&
-      mm.paceGapCents != null &&
-      mm.paceGapCents > 0
-    ) {
+    expect(mm.freeToSpendCents).not.toBeNull();
+    expect(mm.freeToSpendWithEstimateCents).not.toBeNull();
+    // Com estimado o poço é mais fundo — o alerta é pior que o herói.
+    expect(mm.freeToSpendWithEstimateCents!).toBeLessThan(mm.freeToSpendCents!);
+    if (mm.freeToSpendCents != null && mm.freeToSpendCents > 0) {
       expect(mm.headroomBurnDays).toBe(
-        Math.floor(mm.freeToSpendCents / mm.paceGapCents),
+        Math.floor(mm.freeToSpendCents / mm.dailyBurnCents),
       );
     }
+  });
+
+  it('livre para gastar ignora o estimado — só compromissos', () => {
+    const comEstimado = groupTimeline({
+      events: buildTimelineEvents({
+        occurrences: [
+          occ({
+            id: 'aluguel',
+            date: '2026-08-06',
+            amountCents: 360_000,
+            status: 'planned',
+            rowId: null,
+            seriesId: 'serie-aluguel',
+            virtual: true,
+            description: 'Aluguel',
+          }),
+          occ({
+            id: 'salario',
+            date: '2026-08-31',
+            kind: 'income',
+            amountCents: 950_000,
+            status: 'planned',
+            rowId: null,
+            seriesId: 'serie-salario',
+            virtual: true,
+            description: 'Salário',
+          }),
+        ],
+        months: ['2026-08'],
+        today: '2026-07-27',
+        forecastMonthlyCents: 440_000,
+      }),
+      anchorCents: 800_000,
+      months: ['2026-08'],
+    })[0]!;
+    const pts = dailySeries({
+      month: comEstimado,
+      today: '2026-07-27',
+      minimumCents: 0,
+    });
+    const mm = monthMetrics({
+      month: comEstimado,
+      points: pts,
+      today: '2026-07-27',
+      minimumCents: 0,
+    });
+
+    // Sem estimado: fundo no dia do aluguel = 800k − 360k = 440k.
+    expect(mm.lowestAhead!.balanceCents).toBe(440_000);
+    expect(mm.freeToSpendCents).toBe(440_000);
+    // Com estimado: goteja 440k no mês → fundo bem mais baixo.
+    expect(mm.freeToSpendWithEstimateCents).toBeLessThan(440_000);
+    expect(comEstimado.closingCents).toBe(800_000 - 360_000 + 950_000);
+    expect(comEstimado.closingWithEstimateCents).toBe(
+      comEstimado.closingCents - 440_000,
+    );
+    // Renda comprometida: estimado não come a fatia "livre".
+    expect(mm.income!.variableCents).toBe(0);
+    expect(mm.income!.estimatedCents).toBe(440_000);
+    expect(mm.income!.freeCents).toBe(950_000 - 360_000);
   });
 
   it('sem excesso sobre o estimado, headroom é null', () => {
@@ -419,6 +475,7 @@ describe('compareToAverage', () => {
       inCents: 0,
       outCents: 0,
       balanceCents: 0,
+      balanceWithEstimateCents: 0,
       hasPlanned: false,
     }));
     return {
@@ -466,6 +523,7 @@ describe('compareToAverage', () => {
         inCents: 0,
         outCents: 0,
         balanceCents: 0,
+        balanceWithEstimateCents: 0,
         hasPlanned: false,
       })),
     };
@@ -661,6 +719,7 @@ describe('sparklineOutflows', () => {
           inCents: 0,
           outCents: 0,
           balanceCents: 0,
+          balanceWithEstimateCents: 0,
           hasPlanned: false,
         })),
       };

@@ -274,7 +274,7 @@ export type Database = {
           transfer_account_id: string | null;
           notes: string | null;
           tags: string[];
-          source: 'manual' | 'import' | 'recurring';
+          source: 'manual' | 'import' | 'recurring' | 'telegram';
           external_id: string | null;
           status: 'actual' | 'planned' | 'skipped';
           recurrence: 'none' | 'monthly';
@@ -301,7 +301,7 @@ export type Database = {
           transfer_account_id?: string | null;
           notes?: string | null;
           tags?: string[];
-          source?: 'manual' | 'import' | 'recurring';
+          source?: 'manual' | 'import' | 'recurring' | 'telegram';
           external_id?: string | null;
           status?: 'actual' | 'planned' | 'skipped';
           recurrence?: 'none' | 'monthly';
@@ -701,6 +701,86 @@ export type Database = {
           },
         ];
       };
+      telegram_links: {
+        Row: {
+          id: string;
+          household_id: string;
+          user_id: string;
+          person_id: string | null;
+          telegram_user_id: number;
+          telegram_chat_id: number;
+          default_account_id: string | null;
+          linked_at: string;
+          revoked_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          household_id: string;
+          user_id: string;
+          person_id?: string | null;
+          telegram_user_id: number;
+          telegram_chat_id: number;
+          default_account_id?: string | null;
+          linked_at?: string;
+          revoked_at?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['telegram_links']['Insert']>;
+        Relationships: [];
+      };
+      telegram_link_codes: {
+        Row: {
+          id: string;
+          code: string;
+          household_id: string;
+          user_id: string;
+          person_id: string | null;
+          expires_at: string;
+          used_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          code: string;
+          household_id: string;
+          user_id: string;
+          person_id?: string | null;
+          expires_at: string;
+          used_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database['public']['Tables']['telegram_link_codes']['Insert']
+        >;
+        Relationships: [];
+      };
+      capture_drafts: {
+        Row: {
+          id: string;
+          telegram_user_id: number;
+          household_id: string;
+          user_id: string;
+          payload: Record<string, unknown>;
+          status: 'pending' | 'confirmed' | 'cancelled' | 'expired';
+          last_transaction_id: string | null;
+          expires_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          telegram_user_id: number;
+          household_id: string;
+          user_id: string;
+          payload?: Record<string, unknown>;
+          status?: 'pending' | 'confirmed' | 'cancelled' | 'expired';
+          last_transaction_id?: string | null;
+          expires_at: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['capture_drafts']['Insert']>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -719,6 +799,10 @@ export type Database = {
       is_household_member: {
         Args: { hid: string };
         Returns: boolean;
+      };
+      create_telegram_link_code: {
+        Args: { p_person_id?: string | null; p_ttl_minutes?: number };
+        Returns: Database['public']['Tables']['telegram_link_codes']['Row'];
       };
     };
     Enums: Record<string, never>;

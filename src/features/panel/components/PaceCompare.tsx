@@ -179,7 +179,7 @@ function paceVerdict(
   ) {
     return {
       tone: 'warning',
-      text: `Ritmo ${formatBRL(m.paceGapCents)}/dia acima do estimado — a folga aguenta ~${m.headroomBurnDays} ${m.headroomBurnDays === 1 ? 'dia' : 'dias'} se mantiver.`,
+      text: `Ritmo ${formatBRL(m.paceGapCents)}/dia acima do estimado — a folga de compromissos aguenta ~${m.headroomBurnDays} ${m.headroomBurnDays === 1 ? 'dia' : 'dias'} se mantiver.`,
     };
   }
 
@@ -200,7 +200,7 @@ function paceVerdict(
   if (est > 0 && burn > 0 && burn <= est) {
     return {
       tone: 'accent',
-      text: `No ritmo do estimado; o livre é folga além do que o histórico já prevê.`,
+      text: `No ritmo do estimado. A folga acima é só compromisso — o estimado é alerta à parte.`,
     };
   }
 

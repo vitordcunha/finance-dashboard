@@ -35,4 +35,5 @@ export const qk = {
   importBatch: (id: string) => ['import', id] as const,
   importLines: (batchId: string) => ['import', batchId, 'lines'] as const,
   categorizationRules: () => ['categorization-rules'] as const,
+  telegramLink: () => ['telegram-link'] as const,
 };

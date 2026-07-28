@@ -26,16 +26,11 @@ function short(cents: number): string {
 }
 
 /**
- * Onde o saldo chega ao longo da janela.
+ * Fechamento acumulado mês a mês — não o gráfico dia a dia.
  *
- * A fita mostra deltas por mês; deltas não somam de cabeça. Doze resultados
- * positivos em sequência não dizem se o saldo dobrou ou ficou parado — o olho
- * não acumula. Esta curva é a mesma informação, acumulada, e responde a pergunta
- * que a fita não responde: “estou construindo algo?”.
- *
- * Fato e projeção se separam por **traço**, como no gráfico do mês. Uma subida
- * reta e longa aqui é sinal de otimismo na projeção, não de riqueza — e é bom
- * que fique óbvio em vez de enterrado num aviso.
+ * A fita mostra deltas; esta curva acumula. Cheia = só o cadastrado; pontilhada =
+ * se o ritmo estimado se mantiver. Sem a segunda, um ano de sobras mentia
+ * riqueza. Fato e projeção se separam por traço a partir do mês corrente.
  */
 export function TrajectoryChart({
   trajectory: t,
@@ -46,7 +41,11 @@ export function TrajectoryChart({
   const points = t.points;
   if (points.length < 2) return null;
 
-  const values = points.map((p) => p.closingCents);
+  const commitmentValues = points.map((p) => p.closingCents);
+  const estimateValues = points.map((p) => p.closingWithEstimateCents);
+  const values = t.showsEstimate
+    ? [...commitmentValues, ...estimateValues]
+    : commitmentValues;
   const rawMin = Math.min(...values, minimumCents, 0);
   const rawMax = Math.max(...values, minimumCents, 0);
   const span = Math.max(rawMax - rawMin, 1);
@@ -63,30 +62,54 @@ export function TrajectoryChart({
   const currentIndex = points.findIndex((p) => p.ym === currentYm);
   const splitAt = currentIndex >= 0 ? currentIndex : 0;
 
-  const path = (from: number, to: number) =>
+  const pathFor = (
+    from: number,
+    to: number,
+    pick: (p: (typeof points)[number]) => number,
+  ) =>
     points
       .slice(from, to + 1)
-      .map((p, k) => `${k === 0 ? 'M' : 'L'}${x(from + k)},${y(p.closingCents)}`)
+      .map((p, k) => `${k === 0 ? 'M' : 'L'}${x(from + k)},${y(pick(p))}`)
       .join(' ');
 
   const yMin = y(minimumCents);
   const showMinimum = minimumCents > 0;
-  const growing = t.deltaCents >= 0;
   const spansYears = points[0]!.ym.slice(0, 4) !== points.at(-1)!.ym.slice(0, 4);
+
+  const headlineCents = t.showsEstimate ? t.endWithEstimateCents : t.endCents;
+  const headlineDelta = t.showsEstimate
+    ? t.deltaWithEstimateCents
+    : t.deltaCents;
+  const growing = headlineDelta >= 0;
+  const alertLowest =
+    t.showsEstimate && t.lowestWithEstimate
+      ? t.lowestWithEstimate.belowMinimumWithEstimate
+        ? t.lowestWithEstimate
+        : null
+      : t.lowest && t.lowest.belowMinimum
+        ? t.lowest
+        : null;
 
   return (
     <figure className="overflow-hidden rounded-xl border border-border bg-surface">
-      <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border px-4 py-3">
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
-          Para onde o saldo caminha
-        </h3>
-        <p className="text-[11px] tabular-nums text-text-muted">
-          {formatMonth(points.at(-1)!.ym, 'MMM yyyy')}{' '}
-          <span className="text-text">{formatBRL(t.endCents)}</span>{' '}
-          <span className={growing ? 'text-accent' : 'text-danger'}>
-            {growing ? '+' : '−'}
-            {short(Math.abs(t.deltaCents))}
-          </span>
+      <figcaption className="space-y-1 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+            Saldo no fim de cada mês
+          </h3>
+          <p className="text-[11px] tabular-nums text-text-muted">
+            {formatMonth(points.at(-1)!.ym, 'MMM yyyy')}{' '}
+            <span className="text-text">{formatBRL(headlineCents)}</span>{' '}
+            <span className={growing ? 'text-accent' : 'text-danger'}>
+              {growing ? '+' : '−'}
+              {short(Math.abs(headlineDelta))}
+            </span>
+          </p>
+        </div>
+        <p className="text-[11px] leading-snug text-text-muted">
+          {t.showsEstimate
+            ? `Número principal: se mantiver o ritmo. Só o cadastrado fecha em ${formatBRL(t.endCents)}.`
+            : 'Fechamento acumulado da janela — não é o gráfico dia a dia.'}
         </p>
       </figcaption>
 
@@ -96,7 +119,11 @@ export function TrajectoryChart({
           className="w-full"
           style={{ height: 'auto' }}
           role="img"
-          aria-label={`Saldo de fechamento por mês, de ${points[0]!.ym} a ${points.at(-1)!.ym}. Termina em ${formatBRL(t.endCents)}.`}
+          aria-label={
+            t.showsEstimate
+              ? `Saldo de fechamento por mês, de ${points[0]!.ym} a ${points.at(-1)!.ym}. Com ritmo estimado termina em ${formatBRL(t.endWithEstimateCents)}; só compromissos em ${formatBRL(t.endCents)}.`
+              : `Saldo de fechamento por mês, de ${points[0]!.ym} a ${points.at(-1)!.ym}. Termina em ${formatBRL(t.endCents)}.`
+          }
         >
           {[rawMin, rawMax].map((tick) => (
             <g key={tick}>
@@ -131,9 +158,28 @@ export function TrajectoryChart({
             />
           ) : null}
 
+          {/* Estimado atrás: se mantiver o ritmo. */}
+          {t.showsEstimate ? (
+            <path
+              d={pathFor(
+                splitAt,
+                points.length - 1,
+                (p) => p.closingWithEstimateCents,
+              )}
+              fill="none"
+              className="stroke-text-muted"
+              strokeWidth={2}
+              strokeDasharray="5 4"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              opacity={0.9}
+            />
+          ) : null}
+
+          {/* Compromissos: fato cheio, projeção tracejada mais viva. */}
           {splitAt > 0 ? (
             <path
-              d={path(0, splitAt)}
+              d={pathFor(0, splitAt, (p) => p.closingCents)}
               fill="none"
               className="stroke-accent"
               strokeWidth={2}
@@ -143,50 +189,76 @@ export function TrajectoryChart({
           ) : null}
 
           <path
-            d={path(splitAt, points.length - 1)}
+            d={pathFor(splitAt, points.length - 1, (p) => p.closingCents)}
             fill="none"
-            className="stroke-text-muted"
+            className="stroke-accent"
             strokeWidth={2}
             strokeDasharray="5 4"
             strokeLinejoin="round"
             strokeLinecap="round"
-            opacity={0.85}
+            opacity={0.75}
           />
 
-          {points.map((p, i) => (
-            <g key={p.ym}>
-              {onSelect ? (
-                <rect
-                  x={x(i) - plotW / (points.length * 2)}
-                  y={PAD_T}
-                  width={plotW / points.length}
-                  height={plotH}
-                  fill="transparent"
-                  className="cursor-pointer"
-                  onClick={() => onSelect(p.ym)}
-                >
-                  <title>
-                    {formatMonth(p.ym, 'MMMM yyyy')} · {formatBRL(p.closingCents)}
-                  </title>
-                </rect>
-              ) : null}
-              {p.belowMinimum || p.ym === t.lowest?.ym ? (
-                <circle
-                  cx={x(i)}
-                  cy={y(p.closingCents)}
-                  r={3.5}
-                  className={cn(
-                    'stroke-surface',
-                    p.belowMinimum ? 'fill-danger' : 'fill-text-muted',
-                  )}
-                  strokeWidth={2}
-                />
-              ) : null}
-            </g>
-          ))}
+          {points.map((p, i) => {
+            const markEstimate =
+              t.showsEstimate &&
+              (p.belowMinimumWithEstimate ||
+                p.ym === t.lowestWithEstimate?.ym);
+            const markCommit =
+              p.belowMinimum || p.ym === t.lowest?.ym;
+            return (
+              <g key={p.ym}>
+                {onSelect ? (
+                  <rect
+                    x={x(i) - plotW / (points.length * 2)}
+                    y={PAD_T}
+                    width={plotW / points.length}
+                    height={plotH}
+                    fill="transparent"
+                    className="cursor-pointer"
+                    onClick={() => onSelect(p.ym)}
+                  >
+                    <title>
+                      {formatMonth(p.ym, 'MMMM yyyy')} · cadastrado{' '}
+                      {formatBRL(p.closingCents)}
+                      {t.showsEstimate
+                        ? ` · com ritmo ${formatBRL(p.closingWithEstimateCents)}`
+                        : ''}
+                    </title>
+                  </rect>
+                ) : null}
+                {markCommit ? (
+                  <circle
+                    cx={x(i)}
+                    cy={y(p.closingCents)}
+                    r={3.5}
+                    className={cn(
+                      'stroke-surface',
+                      p.belowMinimum ? 'fill-danger' : 'fill-accent',
+                    )}
+                    strokeWidth={2}
+                  />
+                ) : null}
+                {markEstimate &&
+                p.closingWithEstimateCents !== p.closingCents ? (
+                  <circle
+                    cx={x(i)}
+                    cy={y(p.closingWithEstimateCents)}
+                    r={3}
+                    className={cn(
+                      'stroke-surface',
+                      p.belowMinimumWithEstimate
+                        ? 'fill-danger'
+                        : 'fill-text-muted',
+                    )}
+                    strokeWidth={2}
+                  />
+                ) : null}
+              </g>
+            );
+          })}
 
-          {/* Só as pontas e o mês corrente: doze rótulos colidem. Com ano, porque
-              a janela cruza o réveillon e dois "jul" lado a lado não se distinguem. */}
+          {/* Só as pontas e o mês corrente: doze rótulos colidem. */}
           {[0, splitAt, points.length - 1]
             .filter((i, k, arr) => arr.indexOf(i) === k)
             .map((i) => (
@@ -206,13 +278,23 @@ export function TrajectoryChart({
         </svg>
       </div>
 
-      {t.lowest && t.lowest.closingCents < minimumCents ? (
+      <p className="border-t border-border px-4 py-2 text-[11px] leading-snug text-text-muted">
+        {t.showsEstimate
+          ? 'Verde = só o cadastrado · cinza = se mantiver o ritmo neste mês (o chute não acumula de um mês no outro) · não é o saldo dia a dia.'
+          : 'Fechamento de cada mês acumulado · não é o saldo dia a dia.'}
+      </p>
+
+      {alertLowest ? (
         <p className="border-t border-border px-4 py-2.5 text-[11px] leading-snug text-danger">
           O pior fechamento à frente é{' '}
           <span className="font-medium tabular-nums">
-            {formatBRL(t.lowest.closingCents)}
+            {formatBRL(
+              t.showsEstimate
+                ? alertLowest.closingWithEstimateCents
+                : alertLowest.closingCents,
+            )}
           </span>{' '}
-          em {formatMonth(t.lowest.ym, 'MMMM yyyy')} — abaixo do colchão.
+          em {formatMonth(alertLowest.ym, 'MMMM yyyy')} — abaixo do colchão.
         </p>
       ) : null}
     </figure>

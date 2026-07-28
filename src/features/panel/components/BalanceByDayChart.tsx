@@ -79,13 +79,29 @@ export function BalanceByDayChart({
   if (points.length === 0) return null;
 
   const values = points.map((p) => p.balanceCents);
-  // A escala tem de caber a faixa: um piso fora do gráfico esconderia
-  // exatamente o cenário que preocupa.
+  const estimateValues = points.map((p) => p.balanceWithEstimateCents);
+  const hasEstimateOverlay = points.some(
+    (p) => p.balanceWithEstimateCents !== p.balanceCents,
+  );
+  // A escala tem de caber a faixa e a curva de alerta: um piso fora do gráfico
+  // esconderia exatamente o cenário que preocupa.
   const bandValues = band
     ? band.flatMap((b) => [b.lowCents, b.highCents])
     : [];
-  const rawMin = Math.min(...values, ...bandValues, minimumCents, 0);
-  const rawMax = Math.max(...values, ...bandValues, minimumCents, 0);
+  const rawMin = Math.min(
+    ...values,
+    ...(hasEstimateOverlay ? estimateValues : []),
+    ...bandValues,
+    minimumCents,
+    0,
+  );
+  const rawMax = Math.max(
+    ...values,
+    ...(hasEstimateOverlay ? estimateValues : []),
+    ...bandValues,
+    minimumCents,
+    0,
+  );
   const span = Math.max(rawMax - rawMin, 1);
   const min = rawMin - span * 0.14;
   const max = rawMax + span * 0.14;
@@ -110,6 +126,15 @@ export function BalanceByDayChart({
     points
       .slice(from, to + 1)
       .map((p, k) => `${k === 0 ? 'M' : 'L'}${x(from + k)},${y(p.balanceCents)}`)
+      .join(' ');
+
+  const estimateLine = (from: number, to: number) =>
+    points
+      .slice(from, to + 1)
+      .map(
+        (p, k) =>
+          `${k === 0 ? 'M' : 'L'}${x(from + k)},${y(p.balanceWithEstimateCents)}`,
+      )
       .join(' ');
 
   const areaTo = lastRealIndex >= 0 ? lastRealIndex : points.length - 1;
@@ -241,6 +266,12 @@ export function BalanceByDayChart({
                   previsto
                 </span>
               ) : null}
+              {active.projected &&
+              active.balanceWithEstimateCents !== active.balanceCents ? (
+                <span className="font-mono text-[10px] text-warning">
+                  c/ ritmo {short(active.balanceWithEstimateCents)}
+                </span>
+              ) : null}
               {active.isToday ? (
                 <span className="rounded-sm bg-accent-muted px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide text-accent">
                   hoje
@@ -256,8 +287,8 @@ export function BalanceByDayChart({
                 </button>
               ) : null}
             </span>
-          ) : bandArea ? (
-            'cheia = realizado · tracejada = previsto · faixa = margem do estimado'
+          ) : hasEstimateOverlay || bandArea ? (
+            'cheia = compromissos · pontilhada = se mantiver o ritmo · faixa = margem'
           ) : (
             'cheia = realizado · tracejada = previsto'
           )}
@@ -424,6 +455,20 @@ export function BalanceByDayChart({
               strokeLinejoin="round"
               strokeLinecap="round"
               opacity={0.85}
+            />
+          ) : null}
+
+          {/* Alerta: se o ritmo estimado se concretizar. Nunca é a curva do herói. */}
+          {hasEstimateOverlay && lastRealIndex < points.length - 1 ? (
+            <path
+              d={estimateLine(Math.max(lastRealIndex, 0), points.length - 1)}
+              fill="none"
+              className="stroke-warning"
+              strokeWidth={1.5}
+              strokeDasharray="2 4"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              opacity={0.75}
             />
           ) : null}
 

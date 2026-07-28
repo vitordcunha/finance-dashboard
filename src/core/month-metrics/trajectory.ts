@@ -1,14 +1,16 @@
 /**
- * Onde o saldo chega — não quanto sobrou em cada mês.
+ * Onde o saldo de **fechamento** chega — não o dia a dia do mês.
  *
- * A fita de meses mostra **deltas** (+8,1k · +3,1k · +1,9k). Deltas somam de
- * cabeça mal: doze resultados positivos em sequência não dizem se o saldo dobrou
- * ou se ficou parado, porque o olho não acumula. A trajetória mostra o
- * acumulado, que é a pergunta real — "estou construindo algo ou empatando?".
+ * A fita mostra **deltas** (+8,1k · +3,1k). Deltas somam de cabeça mal: doze
+ * resultados positivos não dizem se o saldo dobrou ou empatou. A trajetória
+ * acumula o fechamento de cada mês.
  *
- * Tem um efeito colateral desejado: expõe otimismo. Uma linha que sobe reto por
- * um ano é sinal de que algo grande não está sendo projetado — foi assim que a
- * ausência do variável estimado ficou visível em vez de enterrada num aviso.
+ * Duas séries:
+ * - `closingCents` — só lançamentos (realizado + previsto).
+ * - `closingWithEstimateCents` — se o variável estimado se concretizar.
+ *
+ * Sem o estimado, a linha sobe reto por um ano e mente. Com as duas, o olho
+ * vê o otimismo do cadastrado e o cenário do ritmo lado a lado.
  */
 
 import type { TimelineMonth } from '@/core/timeline';
@@ -16,19 +18,29 @@ import type { TimelineMonth } from '@/core/timeline';
 export type TrajectoryPoint = {
   ym: string;
   closingCents: number;
+  closingWithEstimateCents: number;
   /** Mês ainda não fechado — daqui pra frente é projeção. */
   projected: boolean;
   belowMinimum: boolean;
+  belowMinimumWithEstimate: boolean;
 };
 
 export type Trajectory = {
   points: TrajectoryPoint[];
-  /** Fechamento do último mês da janela. */
+  /** Fechamento do último mês — só compromissos. */
   endCents: number;
-  /** Variação entre o primeiro e o último mês. */
+  /** Fechamento do último mês — com estimado. */
+  endWithEstimateCents: number;
+  /** Variação do primeiro ao último (compromissos). */
   deltaCents: number;
-  /** Pior fechamento projetado, e quando. */
+  /** Variação do primeiro ao último (com estimado). */
+  deltaWithEstimateCents: number;
+  /** Pior fechamento projetado (compromissos), e quando. */
   lowest: TrajectoryPoint | null;
+  /** Pior fechamento projetado (com estimado), e quando. */
+  lowestWithEstimate: TrajectoryPoint | null;
+  /** Há divergência útil entre as duas séries à frente. */
+  showsEstimate: boolean;
 };
 
 export function trajectory(input: {
@@ -42,21 +54,40 @@ export function trajectory(input: {
   const points: TrajectoryPoint[] = input.months.map((m) => ({
     ym: m.ym,
     closingCents: m.closingCents,
+    closingWithEstimateCents: m.closingWithEstimateCents,
     projected: m.ym >= input.currentYm,
     belowMinimum: m.closingCents < minimumCents,
+    belowMinimumWithEstimate: m.closingWithEstimateCents < minimumCents,
   }));
 
   // O pior fechamento só interessa daqui pra frente: passado não se evita.
   let lowest: TrajectoryPoint | null = null;
+  let lowestWithEstimate: TrajectoryPoint | null = null;
+  let showsEstimate = false;
   for (const p of points) {
     if (!p.projected) continue;
     if (!lowest || p.closingCents < lowest.closingCents) lowest = p;
+    if (
+      !lowestWithEstimate ||
+      p.closingWithEstimateCents < lowestWithEstimate.closingWithEstimateCents
+    ) {
+      lowestWithEstimate = p;
+    }
+    if (p.closingWithEstimateCents !== p.closingCents) showsEstimate = true;
   }
+
+  const first = points[0]!;
+  const last = points.at(-1)!;
 
   return {
     points,
-    endCents: points.at(-1)!.closingCents,
-    deltaCents: points.at(-1)!.closingCents - points[0]!.closingCents,
+    endCents: last.closingCents,
+    endWithEstimateCents: last.closingWithEstimateCents,
+    deltaCents: last.closingCents - first.closingCents,
+    deltaWithEstimateCents:
+      last.closingWithEstimateCents - first.closingWithEstimateCents,
     lowest,
+    lowestWithEstimate,
+    showsEstimate,
   };
 }

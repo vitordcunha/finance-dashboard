@@ -152,12 +152,11 @@ export function buildTimelineEvents(input: BuildTimelineInput): TimelineEvent[] 
       //
       // O variável escorre: mercado na quarta, farmácia no sábado, PIX miúdo
       // todo dia. Concentrar o mês inteiro numa data só fazia o gráfico desenhar
-      // um penhasco onde existe uma ladeira — e, pior, **movia o fundo do poço
-      // para o dia errado**. Em agosto/2026 o tranco caía no dia 16, depois do
-      // aperto do dia 10, então o "menor saldo à frente" ignorava a estimativa
-      // por completo: dizia R$ 3.724,79 quando a verdade é R$ 729,55 no dia 30,
-      // ao fim de duas semanas de queda contínua. `livre para gastar` deriva
-      // desse ponto, então o erro chegava inteiro no número que decide o mês.
+      // um penhasco onde existe uma ladeira.
+      //
+      // Estes eventos **não** mexem no saldo real (`groupTimeline` mantém duas
+      // correntes): entram só na curva/faixa de alerta. O herói "livre para
+      // gastar" lê a corrente sem estimado — compromisso agendado, não chute.
       const from = ym === currentYm ? Number(input.today.slice(8, 10)) + 1 : 1;
       for (let day = from; day <= lastDay; day++) {
         const date = `${ym}-${String(day).padStart(2, '0')}`;

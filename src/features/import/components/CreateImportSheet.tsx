@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { MoneyText } from '@/components/money/MoneyText';
 import { Button } from '@/components/ui/Button';
+import { CategorySelect } from '@/components/ui/CategorySelect';
 import { Sheet } from '@/components/ui/Sheet';
 import {
   countPendingSameFingerprint,
@@ -123,27 +124,16 @@ export function CreateImportSheet({
       ) : null}
 
       <div className="space-y-4">
-        <div className="space-y-1.5">
-          <label
-            htmlFor="import-create-category"
-            className="text-sm font-medium text-text-muted"
-          >
-            Categoria
-          </label>
-          <select
-            id="import-create-category"
-            value={categoryId ?? ''}
-            onChange={(e) => setCategoryId(e.target.value || null)}
-            className="min-h-10 w-full rounded-md border border-border bg-bg px-3 text-sm text-text outline-none hover:border-border-strong focus:border-accent"
-          >
-            <option value="">Sem categoria</option>
-            {filtered.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <CategorySelect
+          id="import-create-category"
+          label="Categoria"
+          value={categoryId}
+          onChange={setCategoryId}
+          categories={filtered}
+          placeholder="Sem categoria"
+          allowEmpty
+          emptyLabel="Sem categoria"
+        />
 
         {categoryId && hasFingerprint ? (
           <div className="space-y-3 rounded-lg border border-border bg-bg p-3">

@@ -145,7 +145,7 @@ Renda por pessoa alimenta a **cota %**. Itens `estimated` = variável prevista.
 - `installment_no`, `installment_total`, `installment_group`
 - `transfer_account_id` nullable — **obrigatório quando `kind = 'transfer'`**
 - `notes`, `tags` (`text[]`)
-- `source` (`manual` | `import` | `recurring`)
+- `source` (`manual` | `import` | `recurring` | `telegram`)
 - `external_id` nullable
 - `created_at`, `created_by` (user_id)
 - unique parcial `(account_id, external_id)` onde external_id not null
@@ -246,6 +246,34 @@ Chaves previstas:
 - `contribution_mode`: `income_share` | `equal_50` | `custom`
 - `contribution_custom_bps`: `{ "<person_id>": 6000, ... }` (soma 10000)
 - defaults de captura / preferências leves
+
+### telegram_links
+Vínculo Telegram ↔ membro (captura pelo bot).
+- `id`, `household_id`, `user_id`, `person_id` nullable (default de “quem”; null = Casa)
+- `telegram_user_id`, `telegram_chat_id`
+- `default_account_id` nullable
+- `linked_at`, `revoked_at` nullable
+- unique parcial ativos: `user_id`, `telegram_user_id` onde `revoked_at is null`
+
+### telegram_link_codes
+Código de pairing de uso único (`/start CODIGO`).
+- `code`, `household_id`, `user_id`, `person_id`, `expires_at`, `used_at`
+- RPC `create_telegram_link_code(p_person_id, p_ttl_minutes)`
+
+### capture_drafts
+Rascunho do bot antes de confirmar (service role).
+- `telegram_user_id`, `household_id`, `user_id`, `payload` jsonb
+- `status` (`pending` | `confirmed` | `cancelled` | `expired`)
+- `last_transaction_id` nullable (para `/desfazer`)
+- `expires_at`
+
+### telegram_digest_log
+Idempotência do cron de lembrete de fatura.
+- `household_id`, `account_id`, `statement_month`, `kind` (`due_soon` | `due_today` | `overdue`)
+- `sent_on` (date America/Sao_Paulo)
+- unique `(household_id, account_id, statement_month, kind, sent_on)`
+
+Canal: ver `docs/TELEGRAM.md`.
 
 ## Cota (domínio em `core/`, não só UI)
 

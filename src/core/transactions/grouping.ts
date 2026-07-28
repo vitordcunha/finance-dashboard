@@ -75,10 +75,17 @@ export type MerchantGroup = {
   key: string;
   /** Descrição mais longa do grupo — a que mais informa quem é. */
   label: string;
+  /**
+   * Descrições distintas do grupo (mais longas primeiro), para o sheet mostrar
+   * o que o extrato escreveu quando o rótulo sozinho não identifica.
+   */
+  samples: string[];
   ids: string[];
   totalCents: number;
   count: number;
 };
+
+const MAX_SAMPLES = 5;
 
 /**
  * Grupos de despesa sem categoria, do maior total para o menor.
@@ -102,15 +109,26 @@ export function uncategorizedGroups(
       hit.totalCents += tx.amountCents;
       hit.count += 1;
       if (tx.description.length > hit.label.length) hit.label = tx.description;
+      if (
+        hit.samples.length < MAX_SAMPLES &&
+        !hit.samples.includes(tx.description)
+      ) {
+        hit.samples.push(tx.description);
+      }
     } else {
       byKey.set(key, {
         key,
         label: tx.description,
+        samples: [tx.description],
         ids: [tx.id],
         totalCents: tx.amountCents,
         count: 1,
       });
     }
+  }
+
+  for (const group of byKey.values()) {
+    group.samples.sort((a, b) => b.length - a.length);
   }
 
   return [...byKey.values()].sort((a, b) => b.totalCents - a.totalCents);

@@ -86,13 +86,14 @@ pergunta que faz alguém abrir o app. Por isso o extrato entra recolhido, no fim
    mês é polaridade, não identidade: barra a partir de uma linha zero e sinal no
    rótulo. Verde e vermelho ficam a ΔE 7 no deuteranopia, então **posição e
    sinal** carregam a informação; cor é reforço.
-3. **Herói + por dia** — a decisão do mês. Corrente: livre para gastar (e o que
-   falta para o colchão). Embaixo, ritmo × estimado × cabe — só o variável.
-   Passado: fechou com. Futuro: fecha com / livre projetado.
-4. **Como o saldo caminha** — gráfico + faixa + simulador de ritmo + colchão
-   editável + `abriu → fecha`, e a trajetória de 12 meses. Uma seção: a curva
-   prova o herói e o simulador é o único lugar onde dá para mexer nele. No dia
-   ativo, atalho para o extrato.
+3. **Herói + por dia** — a decisão do mês. Corrente: folga de caixa (piso à
+   frente − colchão) com sobra do mês (renda − compromissos) no rodapé do card.
+   Embaixo, ritmo × estimado × cabe — só o variável. Passado: fechou com.
+   Futuro: fecha com / folga projetada.
+4. **Como o saldo caminha** — gráfico dia a dia + faixa + simulador + colchão
+   editável + `abriu → fecha`. Abaixo, **Saldo no fim de cada mês**: fechamento
+   acumulado da janela (cheia = cadastrado · pontilhada = se mantiver o ritmo).
+   Não confundir com o gráfico diário — são perguntas diferentes.
 5. **O que ainda está marcado** — menor saldo à frente, ainda sai/entra,
    atrasados, agenda dos próximos 14 dias.
 6. **Como você vem gastando** — renda comprometida, burn-up, estimado à frente,
@@ -103,13 +104,14 @@ pergunta que faz alguém abrir o app. Por isso o extrato entra recolhido, no fim
 8. **Extrato do mês** — recolhido, com a contagem no cabeçalho.
 
    Métricas que não mudam uma decisão não sobem de seção. Mês passado não tem
-   "livre para gastar".
+   "folga de caixa".
 
    | métrica | responde |
    |---|---|
-   | Livre para gastar | quanto cabe até o fim do mês, e quanto por dia |
+   | Folga de caixa | quanto cabe sem furar o piso de caixa, e quanto por dia |
+   | Sobra do mês | renda − compromissos — quanto do mês ainda é decisão (sem timing) |
    | Por dia · só o variável | ritmo até hoje × estimado histórico × o que cabe |
-   | Folga sob ritmo alto | dias que o excesso sobre o estimado come o livre |
+   | Folga sob ritmo alto | dias que o excesso sobre o estimado come a folga |
    | Menor saldo à frente | quando e quão fundo o saldo afunda |
    | Dias no vermelho / abaixo do colchão | por quanto tempo aperta |
    | Ainda vai sair · ainda vai entrar | comprometido (previsto/série — sem estimado) |
@@ -125,9 +127,17 @@ pergunta que faz alguém abrir o app. Por isso o extrato entra recolhido, no fim
    | Composição da saída | compromisso × fatura × variável × estimado |
    | Contra a média | o mês contra os meses fechados |
 
-   `Livre para gastar` é **menor saldo à frente − colchão**, não
-   `saldo hoje − contas`: o menor saldo já embute tudo que entra e sai até lá,
-   inclusive o salário que chega depois do aluguel.
+   Duas perguntas, dois números no herói:
+
+   - **Folga de caixa** = **menor saldo à frente − colchão**. Embute timing
+     (salário depois do aluguel). É o número que decide quanto gastar sem furar.
+   - **Sobra do mês** = **renda − compromisso − fatura − variável lançado**
+     (`income.freeCents`). Contábil, sem timing — a fatia que ainda é decisão.
+     Mora no rodapé do card do herói e de novo na barra de renda comprometida.
+
+   Não confundir com `saldo hoje − contas`: o piso já embute tudo que entra e sai
+   até lá. Quando a sobra do mês é maior que a folga, o caixa aperta *antes* da
+   próxima entrada — o herói mostra a folga; a sobra explica o mês no papel.
 
    O **ritmo** conta só o gasto discricionário (`core/month-metrics/outflow-kind`).
    A pergunta é "estou gastando rápido demais?", e a resposta não pode incluir
@@ -142,9 +152,9 @@ pergunta que faz alguém abrir o app. Por isso o extrato entra recolhido, no fim
    já nasce depois de descontar as contas, e o `estimado` é mediana do que não
    está cadastrado. Com aluguel no ritmo, o veredito acusava excesso todo mês.
 
-   Se o ritmo passa do estimado, a folga que resta **não** é `livre ÷ ritmo`: o
-   livre já embute o estimado na timeline. O que come a folga é só o surplus
-   (`ritmo − estimado/dia`).
+   Se o ritmo passa do estimado, a folga que resta **não** é `folga ÷ ritmo`: a
+   folga de caixa (compromissos) e o alerta com estimado são números separados.
+   O que come a folga sob ritmo alto é só o surplus (`ritmo − estimado/dia`).
 
    O ritmo usa `nominalCents`, não o efeito no caixa: compra no cartão pesa no dia
    da compra, que é quando a decisão foi tomada. Como a fatura é quitação, nada
