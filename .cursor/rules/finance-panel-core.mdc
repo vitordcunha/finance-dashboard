@@ -1,0 +1,16 @@
+---
+description: Regras centrais do Finance Panel (sempre ativas)
+alwaysApply: true
+---
+
+# Finance Panel — core
+
+- Ler `AGENTS.md` e a fase atual em `docs/IMPLEMENTATION-PLAN.md` antes de implementar.
+- Stack alvo: React + Vite + Tailwind + TanStack Query + **Supabase**. Não estender SQLite/Fastify legado.
+- Dinheiro = **centavos integer**. Proibido float como fonte da verdade.
+- Camadas: `features` → `data`/`core`; UI **nunca** importa Supabase direto.
+- UI em **pt-BR**. Código/arquivos em inglês.
+- Componentes pequenos; pages só compõem. Features em `src/features/<nome>/`.
+- Não expandir escopo além da fase. Não adicionar Redux/Mongo/Open Banking contínuo (OFX/CSV manual só quando a fase pedir).
+- Separação Casa/Eu = lente UI; sem ACL/privacidade por pessoa.
+- Commits: sem `Co-authored-by: Cursor` nem `Made-with: Cursor`.

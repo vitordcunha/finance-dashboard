@@ -1,0 +1,45 @@
+{
+  "note": "Snapshot de plan_items antes de migrar para lançamentos recorrentes (transactions.recurrence='monthly'). As tabelas plan_items e plan_overrides seguem no banco, intactas — nada foi apagado.",
+  "takenAt": "2026-07-27",
+  "plan_items": [
+    {
+      "id": "e6f1db5f-ed54-402a-a90b-17ee8a4c9ab5",
+      "household_id": "4542e7d0-2277-4061-8590-30b920426cbb",
+      "kind": "income",
+      "name": "salario",
+      "amount_cents": 900000,
+      "recurrence": "monthly",
+      "start_month": "2026-06",
+      "end_month": null,
+      "due_day": 31,
+      "category_id": "a78df003-8c41-4a84-91c8-f4742aa1ea52",
+      "person_id": "39e8451e-616c-4be4-98f9-db6f3b5b189f",
+      "account_id": "4d1bc1db-36b6-4e29-a4a0-8453007dbe49",
+      "essential": false,
+      "estimated": false,
+      "archived": false,
+      "notes": null,
+      "sort": 0
+    },
+    {
+      "id": "73d3ad8c-aafe-4901-ad85-d1f8c4145731",
+      "household_id": "4542e7d0-2277-4061-8590-30b920426cbb",
+      "kind": "expense",
+      "name": "Aluguel",
+      "amount_cents": 360000,
+      "recurrence": "monthly",
+      "start_month": "2026-07",
+      "end_month": null,
+      "due_day": 6,
+      "category_id": "ce791868-3485-4832-9099-812dc45b33c1",
+      "person_id": "39e8451e-616c-4be4-98f9-db6f3b5b189f",
+      "account_id": "4d1bc1db-36b6-4e29-a4a0-8453007dbe49",
+      "essential": true,
+      "estimated": true,
+      "archived": false,
+      "notes": "Valor varia mês a mês",
+      "sort": 0
+    }
+  ],
+  "plan_overrides": []
+}

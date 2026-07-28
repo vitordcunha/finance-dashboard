@@ -1,0 +1,3 @@
+# App privado (casal) — não indexar.
+User-agent: *
+Disallow: /

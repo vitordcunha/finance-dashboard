@@ -1,0 +1,16 @@
+---
+description: Padrões React/UI do Finance Panel
+globs: src/**/*.{tsx,css}
+alwaysApply: false
+---
+
+# React + UI
+
+- Seguir `docs/UX.md`: um herói por tela; Casa calma / Eu denso; captura rápida; anti-padrões (roxo genérico, cards demais na home Casa, form longo).
+- Respeitar escopo global Casa/Eu/Tudo quando a tela for sensível a pessoa.
+- Usar tokens em `src/styles` — sem cores mágicas soltas.
+- Todo valor monetário via `MoneyText` / `formatBRL`.
+- Toda tela/lista: loading (skeleton), empty, erro.
+- Sheet/`+` para captura; não abrir página cheia para lançamento comum.
+- Preferir Sonner + desfazer a modal de confirmação em ações comuns.
+- Mobile-first; área de toque ≥ 44px em ações principais.

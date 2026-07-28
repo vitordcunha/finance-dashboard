@@ -1,0 +1,14 @@
+---
+description: Domínio, dinheiro e data layer
+globs: src/{core,data,types}/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Core + Data
+
+- `src/core/**` puro: sem React, sem Supabase, sem DOM.
+- Novas regras de plano/projeção/reconciliação → `core/` + teste Vitest.
+- `src/data/**` é a única borda Supabase; mapear rows → modelos de domínio.
+- Query keys só em `src/data/query-keys.ts`.
+- Colunas monetárias: `*_cents`. Schema: `docs/DATA-MODEL.md`.
+- Não editar `src/data/supabase/types.ts` à mão (gerar via CLI).

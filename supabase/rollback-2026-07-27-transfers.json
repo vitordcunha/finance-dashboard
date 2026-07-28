@@ -1,0 +1,28 @@
+{
+  "note": "Snapshot dos 22 lançamentos kind=transfer antes da reclassificação da Fase 1 (invariante: transfer exige conta de destino). Para reverter, reaplicar kind/category_id/transfer_account_id por id.",
+  "takenAt": "2026-07-27",
+  "rows": [
+    {"id":"2ebca9bd-5920-40b7-9027-bd45addac157","date":"2026-06-25","kind":"transfer","amount_cents":7580,"description":"TRANSF ENVIADA PIX OB","category_id":null,"transfer_account_id":null},
+    {"id":"a0807cf7-cba4-4f5e-8f99-015d49d69707","date":"2026-06-29","kind":"transfer","amount_cents":4999,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"1f1809b1-5dd5-4a3e-9a11-5162221b928c","date":"2026-06-30","kind":"transfer","amount_cents":2000,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"b11c7b82-20c1-4e37-8a2e-d548db40fa12","date":"2026-06-30","kind":"transfer","amount_cents":16000,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"87d7c050-638a-405d-aa83-87ba3036bbf6","date":"2026-07-02","kind":"transfer","amount_cents":7995,"description":"TRANSF ENVIADA PIX OB","category_id":null,"transfer_account_id":null},
+    {"id":"93e9a6a3-904b-41c3-86d8-d3902ed7f2b7","date":"2026-07-03","kind":"transfer","amount_cents":5236,"description":"TRANSF ENVIADA PIX OB","category_id":null,"transfer_account_id":null},
+    {"id":"cd4a9b33-f7c9-4092-a6ff-e1c94519170c","date":"2026-07-05","kind":"transfer","amount_cents":2389,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"55e5ed5b-07bc-4197-abc7-c1816db48094","date":"2026-07-06","kind":"transfer","amount_cents":429526,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"ba5bd135-c624-49e7-9f66-aa76a41737a1","date":"2026-07-07","kind":"transfer","amount_cents":2820,"description":"TRANSF ENVIADA PIX OB","category_id":null,"transfer_account_id":null},
+    {"id":"7949c000-5a8c-4586-8335-f83cf8c78f22","date":"2026-07-07","kind":"transfer","amount_cents":4487,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"cdda8a19-718b-4edf-9a7a-c53282c9ab64","date":"2026-07-08","kind":"transfer","amount_cents":2500,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"eea2ffd7-a565-4024-a71b-1e09d71b9035","date":"2026-07-10","kind":"transfer","amount_cents":2357,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"dd494cb2-9377-462f-b9d5-006c82ccd936","date":"2026-07-10","kind":"transfer","amount_cents":1386,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"284d82b2-9d06-4f93-bed2-4d10c6a81e91","date":"2026-07-12","kind":"transfer","amount_cents":45834,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"9cc6ab46-27a2-4a4b-940a-d0af73279c6e","date":"2026-07-13","kind":"transfer","amount_cents":17385,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"ed26d76f-ca48-4b7f-b5d7-5cce07262354","date":"2026-07-14","kind":"transfer","amount_cents":340000,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"912d4701-7b47-4560-b95a-affb30a1262d","date":"2026-07-15","kind":"transfer","amount_cents":15200,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"ed80b1f3-1efa-41fb-af96-5431d60ede16","date":"2026-07-22","kind":"transfer","amount_cents":18000,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"07d79352-ea1b-457e-af88-413a5288bdfe","date":"2026-07-23","kind":"transfer","amount_cents":2947,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"7eed4e17-12a7-40cd-bdd5-f1b64e58e25f","date":"2026-07-23","kind":"transfer","amount_cents":2947,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"e0ed9762-e4af-48b4-a475-ae7b65834aca","date":"2026-07-25","kind":"transfer","amount_cents":4000,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null},
+    {"id":"257b209f-c546-42c3-9c17-a1eb0448fcaa","date":"2026-07-25","kind":"transfer","amount_cents":4000,"description":"TRANSF ENVIADA PIX","category_id":null,"transfer_account_id":null}
+  ]
+}

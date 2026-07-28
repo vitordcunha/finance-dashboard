@@ -1,0 +1,13 @@
+---
+description: Migrations e SQL Supabase
+globs: supabase/**/*.sql
+alwaysApply: false
+---
+
+# Supabase SQL
+
+- Seguir `docs/DATA-MODEL.md`.
+- Toda tabela de negócio com `household_id` (ou join ao pai) + **RLS**.
+- Dinheiro: `integer` centavos, nunca `double precision` / `real`.
+- Mês de competência: texto `yyyy-MM` (ou convenção já usada nas migrations — manter consistente).
+- Não expor `service_role` em client. Policies baseadas em `household_members`.

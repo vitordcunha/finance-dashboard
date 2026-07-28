@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+.DS_Store
+*.log
+.env
+.env.local
+.env.*.local
+coverage/
+.vercel/
