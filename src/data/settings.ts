@@ -8,6 +8,7 @@ export type SettingRow = Tables<'settings'>;
 const CONTRIBUTION_MODE_KEY = 'contribution_mode';
 const MINIMUM_BALANCE_KEY = 'minimum_balance_cents';
 const CONTRIBUTION_CUSTOM_BPS_KEY = 'contribution_custom_bps';
+const SHARED_CATEGORIES_KEY = 'household_shared_categories';
 
 export async function getSetting(
   householdId: string,
@@ -111,6 +112,39 @@ export async function setContributionCustomBps(
   return bpsByPerson;
 }
 
+/**
+ * Categorias que são **conta da casa** — o pote que o rateio divide.
+ *
+ * Precisa ser declarado porque não havia como saber. O painel inferia o pote como
+ * "recorrente ou categoria essencial", que captura o que é *recorrente*, não o que
+ * é *compartilhado*: entrava o pagamento do drone da mãe dele, o transporte dele e
+ * 100% da fatura do cartão dele, e ficava fora todo o compartilhado variável
+ * (mercado além do previsto, farmácia). Em agosto/2026 isso fazia o card cobrar
+ * R$ 442,54 dela sobre um rateio que estava exatamente na regra combinada.
+ *
+ * `transactions.person_id` seria o campo natural (`null` = casa), mas no banco ele
+ * está preenchido com o **dono da conta** — `Aluguel → Eu`, `Luz → Eu` —, então
+ * usá-lo hoje daria um pote de R$ 140. Marcar categoria resolve aluguel, luz,
+ * internet, gás e mercado de uma vez e cai no fluxo de categorizar que já existe.
+ */
+export async function getSharedCategoryIds(
+  householdId: string,
+): Promise<string[]> {
+  const row = await getSetting(householdId, SHARED_CATEGORIES_KEY);
+  const value = row?.value;
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === 'string');
+}
+
+export async function setSharedCategoryIds(
+  householdId: string,
+  categoryIds: string[],
+): Promise<string[]> {
+  const unique = [...new Set(categoryIds)];
+  await upsertSetting(householdId, SHARED_CATEGORIES_KEY, unique as Json);
+  return unique;
+}
+
 function isContributionMode(value: string): value is ContributionMode {
   return (
     value === 'income_share' || value === 'equal_50' || value === 'custom'
@@ -123,11 +157,23 @@ function isContributionMode(value: string): value is ContributionMode {
  *
  * Sem ele "saldo positivo" vira o único alarme, e zerar a conta no dia 24 conta
  * como mês bem-sucedido. Zero = desligado.
+ *
+ * **Por lente.** Um valor único aplicado a Casa, Eu e Greicy deixava a lente dela
+ * em alerta permanente: o colchão de R$ 1.500 dimensionado para uma casa de
+ * R$ 14,4k cobria o gráfico inteiro de uma conta que gira R$ 2,4k, e o herói
+ * anunciava "falta R$ 1.410 para o colchão" sobre um saldo de R$ 90 — verdadeiro,
+ * inútil e para sempre. Lente de pessoa sem valor próprio fica **sem colchão**:
+ * alarme errado é pior que alarme ausente.
  */
+function minimumKey(personId?: string | null): string {
+  return personId ? `${MINIMUM_BALANCE_KEY}:${personId}` : MINIMUM_BALANCE_KEY;
+}
+
 export async function getMinimumBalanceCents(
   householdId: string,
+  personId?: string | null,
 ): Promise<number> {
-  const row = await getSetting(householdId, MINIMUM_BALANCE_KEY);
+  const row = await getSetting(householdId, minimumKey(personId));
   const value = row?.value as { cents?: unknown } | number | null;
   if (typeof value === 'number' && Number.isInteger(value)) return value;
   if (
@@ -144,8 +190,9 @@ export async function getMinimumBalanceCents(
 export async function setMinimumBalanceCents(
   householdId: string,
   cents: number,
+  personId?: string | null,
 ): Promise<number> {
   const safe = Math.max(0, Math.round(cents));
-  await upsertSetting(householdId, MINIMUM_BALANCE_KEY, { cents: safe });
+  await upsertSetting(householdId, minimumKey(personId), { cents: safe });
   return safe;
 }

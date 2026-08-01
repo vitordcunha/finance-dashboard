@@ -6,12 +6,17 @@ import { Panel } from '@/components/ui/Panel';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { BPS_TOTAL } from '@/core/contribution/share';
 import type { ContributionMode } from '@/data/settings';
-import { usePeopleQuery } from '@/features/capture/hooks/useCaptureLookups';
+import {
+  useCategories,
+  usePeopleQuery,
+} from '@/features/capture/hooks/useCaptureLookups';
 import {
   useContributionCustomBps,
   useContributionMode,
   useSetContributionCustomBps,
   useSetContributionMode,
+  useSetSharedCategories,
+  useSharedCategories,
 } from '@/features/settings/hooks/useSettingsMutations';
 import { cn } from '@/lib/cn';
 
@@ -111,12 +116,15 @@ export function ContributionModeSection() {
           id="settings-contribution"
           className="text-xs font-medium uppercase tracking-wide text-text-muted"
         >
-          Cota da casa
+          Divisão da casa
         </h2>
         <p className="mt-1 text-xs text-text-muted">
-          Como calcular sua parte dos gastos compartilhados no painel Eu.
+          O que entra na conta da casa e como ela se divide. Vale para o card
+          “Divisão da casa” no painel.
         </p>
       </div>
+
+      <SharedCategoriesPicker />
 
       {isLoading ? <Skeleton className="h-28 w-full rounded-xl" /> : null}
 
@@ -217,12 +225,121 @@ export function ContributionModeSection() {
 
           {current === 'income_share' ? (
             <p className="border-t border-border pt-3 text-xs text-text-muted">
-              Sem renda no plano para o mês, a cota cai automaticamente em 50/50
-              (visível no painel Eu).
+              O peso vem da <strong className="text-text">renda recorrente</strong>{' '}
+              de cada um no mês. Renda eventual fica fora de propósito — como base,
+              ela faria a divisão oscilar todo mês. Sem nenhuma renda recorrente
+              cadastrada, cai em meio a meio.
             </p>
           ) : null}
         </Panel>
       ) : null}
     </section>
   );
+}
+
+/**
+ * Quais categorias são conta da casa.
+ *
+ * É o pote que o rateio divide, e precisa ser **declarado**. O painel inferia
+ * "recorrente ou essencial", que é outra coisa: entravam o transporte de um e a
+ * fatura do cartão do outro, e ficava fora todo o compartilhado variável. Em
+ * agosto/2026 essa inferência acusava R$ 442,54 de dívida de quem estava em dia.
+ *
+ * Marcação por **categoria**, não por lançamento: resolve aluguel, luz, internet,
+ * gás e mercado de uma vez, e cai no fluxo de categorizar que já existe. O que for
+ * exceção (uma compra pessoal numa categoria da casa) se resolve movendo de
+ * categoria.
+ */
+function SharedCategoriesPicker() {
+  const categoriesQuery = useCategories();
+  const { data: saved, isLoading } = useSharedCategories();
+  const mutation = useSetSharedCategories();
+  const [draft, setDraft] = useState<string[] | null>(null);
+
+  const expense = (categoriesQuery.data ?? []).filter(
+    (c) => c.kind === 'expense',
+  );
+  const selected = draft ?? saved ?? [];
+  const dirty = draft != null && !sameSet(draft, saved ?? []);
+
+  // Atualização **funcional**: dois toques no mesmo tick leem o mesmo `draft` do
+  // render e o segundo apaga o primeiro. Marcar três categorias em sequência
+  // rápida deixava só a última marcada.
+  function toggle(id: string) {
+    setDraft((prev) => {
+      const base = prev ?? saved ?? [];
+      return base.includes(id)
+        ? base.filter((x) => x !== id)
+        : [...base, id];
+    });
+  }
+
+  if (isLoading || categoriesQuery.isLoading) {
+    return <Skeleton className="h-32 w-full rounded-xl" />;
+  }
+
+  return (
+    <Panel className="space-y-3 p-3">
+      <div>
+        <p className="text-sm font-medium text-text">Conta da casa</p>
+        <p className="mt-0.5 text-xs text-text-muted">
+          As categorias marcadas formam o pote a dividir. O pagamento de fatura
+          nunca entra — as compras dentro dela já contam, cada uma na própria
+          categoria.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {expense.map((category) => {
+          const on = selected.includes(category.id);
+          return (
+            <button
+              key={category.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(category.id)}
+              className={cn(
+                'rounded-pill border px-2.5 py-1 text-xs transition-colors',
+                on
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-border text-text-muted hover:border-border-strong hover:text-text',
+              )}
+            >
+              {category.name}
+            </button>
+          );
+        })}
+      </div>
+
+      {selected.length === 0 ? (
+        <p className="text-xs text-danger">
+          Sem nenhuma categoria marcada não há pote, e o card de divisão fica sem o
+          que mostrar.
+        </p>
+      ) : null}
+
+      {dirty ? (
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            disabled={mutation.isPending}
+            onClick={() => {
+              mutation.mutate(draft ?? [], { onSuccess: () => setDraft(null) });
+            }}
+          >
+            Salvar
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
+            Cancelar
+          </Button>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(b);
+  return a.every((x) => set.has(x));
 }

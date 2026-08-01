@@ -1,5 +1,4 @@
-import { MoneyText } from '@/components/money/MoneyText';
-import type { VariableForecast } from '@/core/forecast';
+import type { ApplicableForecast, VariableForecast } from '@/core/forecast';
 import { formatBRL } from '@/core/money';
 import type {
   Burnup,
@@ -13,7 +12,6 @@ import { ForecastNotice } from '@/features/panel/components/ForecastNotice';
 import { IncomeSplitBar } from '@/features/panel/components/IncomeSplitBar';
 import { InvoiceRunwayChart } from '@/features/panel/components/InvoiceRunwayChart';
 import { MetricTile } from '@/features/panel/components/MetricTile';
-import { cn } from '@/lib/cn';
 
 type Phase = 'past' | 'current' | 'future';
 
@@ -23,6 +21,8 @@ type Props = {
   comparison: { averageOutCents: number; deltaBps: number } | null;
   sparkline: OutflowSparkPoint[];
   forecast: VariableForecast | null;
+  /** O recorte do estimado que vale para este mês. */
+  applicableForecast: ApplicableForecast | null;
   ym: string;
   categoryNameById: Map<string, string>;
   burnup: Burnup | null;
@@ -46,6 +46,7 @@ export function HabitsSection({
   comparison,
   sparkline,
   forecast,
+  applicableForecast,
   ym,
   categoryNameById,
   burnup,
@@ -56,20 +57,10 @@ export function HabitsSection({
 }: Props) {
   const tiles: React.ReactNode[] = [];
 
-  if (phase !== 'past' && m.estimatedAheadCents > 0) {
-    tiles.push(
-      <MetricTile
-        key="estimated"
-        label="Estimado à frente"
-        value={formatBRL(m.estimatedAheadCents)}
-        hint={
-          m.estimatedDailyCents > 0
-            ? `${formatBRL(m.estimatedDailyCents)}/dia · mediana fora do cadastrado`
-            : 'Mediana do que você gasta fora do cadastrado'
-        }
-      />,
-    );
-  }
+  // `Estimado à frente` saiu daqui: o mesmo número já aparece no rodapé da barra
+  // de renda, na nota do estimado, no comparativo por dia, no simulador e como
+  // linha tracejada no gráfico. O estimado é **alerta** — repeti-lo mais que
+  // qualquer número real invertia a hierarquia que a tela deveria ter.
 
   if (m.biggestExpense) {
     tiles.push(
@@ -134,21 +125,13 @@ export function HabitsSection({
 
       {sparkline.length > 0 ? <OutflowSparkline points={sparkline} /> : null}
 
-      {compositionTotal > 0 ? (
-        <OutflowComposition
-          fixedCents={m.fixedOutCents}
-          settlementCents={m.settlementOutCents}
-          variableCents={m.variableOutCents}
-          estimatedCents={m.estimatedOutCents}
-        />
-      ) : null}
-
       {runway ? (
         <InvoiceRunwayChart runway={runway} onSelect={onSelectMonth} />
       ) : null}
 
       <ForecastNotice
         forecast={forecast}
+        applicable={applicableForecast}
         ym={ym}
         relevant={phase !== 'past'}
         categoryNameById={categoryNameById}
@@ -182,81 +165,6 @@ function OutflowSparkline({ points }: { points: OutflowSparkPoint[] }) {
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-function OutflowComposition({
-  fixedCents,
-  settlementCents,
-  variableCents,
-  estimatedCents,
-}: {
-  fixedCents: number;
-  settlementCents: number;
-  variableCents: number;
-  estimatedCents: number;
-}) {
-  const total = fixedCents + settlementCents + variableCents + estimatedCents;
-  const slices = [
-    { key: 'fixed', label: 'Compromisso', cents: fixedCents, fill: 'bg-expense' },
-    {
-      key: 'settlement',
-      label: 'Fatura',
-      cents: settlementCents,
-      fill: 'bg-expense/60',
-    },
-    {
-      key: 'variable',
-      label: 'Variável',
-      cents: variableCents,
-      fill: 'bg-expense/35',
-    },
-    {
-      key: 'estimated',
-      label: 'Estimado',
-      cents: estimatedCents,
-      fill: 'bg-expense/18',
-    },
-  ].filter((s) => s.cents > 0);
-
-  let used = 0;
-  const withPct = slices.map((s, i) => {
-    const pct =
-      i === slices.length - 1
-        ? Math.max(0, 100 - used)
-        : Math.round((s.cents / total) * 100);
-    used += pct;
-    return { ...s, pct };
-  });
-
-  return (
-    <div className="rounded-xl border border-border bg-surface p-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-muted">
-        Composição da saída
-      </p>
-      <div className="mt-2 flex h-2.5 gap-0.5 overflow-hidden rounded-full">
-        {withPct.map((s, i) => (
-          <div
-            key={s.key}
-            className={cn(
-              s.fill,
-              i === 0 && 'rounded-l-full',
-              i === withPct.length - 1 && 'rounded-r-full',
-            )}
-            style={{ width: `${s.pct}%` }}
-          />
-        ))}
-      </div>
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[11px]">
-        {withPct.map((s) => (
-          <span key={s.key} className="text-text-muted">
-            {s.label}{' '}
-            <MoneyText cents={s.cents} className="text-[11px] text-text" />{' '}
-            <span className="font-mono tabular-nums">({s.pct}%)</span>
-          </span>
-        ))}
       </div>
     </div>
   );

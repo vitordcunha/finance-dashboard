@@ -7,6 +7,7 @@ export {
 } from '@/core/month-metrics/daily';
 export {
   compareToAverage,
+  householdOutCents,
   monthMetrics,
   type Highlight,
   type IncomeSplit,

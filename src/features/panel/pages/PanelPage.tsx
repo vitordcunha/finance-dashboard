@@ -39,6 +39,11 @@ import { HouseholdSplitCard } from '@/features/panel/components/HouseholdSplitCa
 import { UncategorizedSection } from '@/features/panel/components/UncategorizedSection';
 import { uncategorizedGroups } from '@/core/transactions/grouping';
 import { useMinimumBalance } from '@/features/panel/hooks/useMinimumBalance';
+import {
+  useContributionCustomBps,
+  useContributionMode,
+  useSharedCategories,
+} from '@/features/settings/hooks/useSettingsMutations';
 import { DayRow } from '@/features/panel/components/DayRow';
 import { MonthStrip } from '@/features/panel/components/MonthStrip';
 import { EntrySheet } from '@/features/panel/components/EntrySheet';
@@ -55,8 +60,17 @@ function formatAsOf(iso: string): string {
 }
 
 /**
- * A aplicação inteira — um mês por vez, numa linha de raciocínio:
- * herói → ritmo → trajetória → compromissos → hábito → detalhe.
+ * A aplicação inteira — um mês por vez, em **camadas**, cada uma com uma pergunta:
+ *
+ * 1. *dá para gastar?* — o herói, um número, e o comparativo por dia.
+ * 2. *por quê?* — a curva do mês, o simulador de ritmo, o colchão.
+ * 3. *o que eu faço?* — categorizar, rateio, contas marcadas. Ação, não KPI.
+ * 4. *entender o mês* — renda, categorias, fatura, trajetória. **Colapsada.**
+ *
+ * A ordem anterior era treze seções seguidas sem hierarquia: a divisão da casa
+ * caía no meio, depois de um gráfico de treze meses, e a trajetória de 2027 vinha
+ * antes de "17 lançamentos sem categoria". Tudo aberto ao mesmo tempo, ~35 números
+ * na vertical, e o mais destacado deles era o menos acionável.
  */
 export function PanelPage() {
   const [owner, setOwner] = useState<string | null>(null);
@@ -79,6 +93,7 @@ export function PanelPage() {
     unanchoredAccounts,
     anchorAsOfDate,
     forecast,
+    applicableForecastByYm,
     categoryNameById,
     essentialCategoryIds,
     accountOwnerById,
@@ -91,12 +106,22 @@ export function PanelPage() {
     refetch,
   } = usePanel({ personId: owner, forecastOverrideDailyCents: paceDaily });
 
-  const { data: minimumCents = 0 } = useMinimumBalance();
+  /** Colchão da lente aberta: a casa e cada pessoa têm o seu. */
+  const { data: minimumCents = 0 } = useMinimumBalance(owner);
+
+  const { data: sharedCategoryIds } = useSharedCategories();
+  const { data: contributionMode = 'income_share' } = useContributionMode();
+  const { data: customBps } = useContributionCustomBps();
+  const sharedSet = useMemo(
+    () => new Set(sharedCategoryIds ?? []),
+    [sharedCategoryIds],
+  );
 
   const [selectedYm, setSelectedYm] = useState<string | null>(null);
   const [editing, setEditing] = useState<Occurrence | null>(null);
   const [creating, setCreating] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
 
   const ym = selectedYm ?? currentYm;
   const month = useMemo(() => months.find((m) => m.ym === ym), [months, ym]);
@@ -146,25 +171,44 @@ export function PanelPage() {
     [months, currentYm],
   );
 
+  /**
+   * O estimado que vale para **este** mês — a mediana menos o que o mês já tem
+   * cadastrado. Não existe "o estimado": o de julho e o de agosto são diferentes.
+   */
+  const applicable = applicableForecastByYm.get(ym) ?? null;
+
+  /**
+   * O estimado tem base fora deste mês.
+   *
+   * O mês corrente entra na amostra da mediana de propósito — é o que faz o número
+   * existir com um mês de histórico. Mas então "ritmo acima do estimado" compara o
+   * mês com ele mesmo, e o painel acusava "mês mais caro que o habitual" sobre o
+   * mês que definiu o habitual.
+   */
+  const estimateIndependent = useMemo(
+    () => forecast?.monthsUsed.some((m) => m !== ym) ?? false,
+    [forecast, ym],
+  );
+
   /** Estimado do histórico em R$/dia, para o mês aberto. */
   const baselineDailyCents = useMemo(
-    () => monthlyToDailyCents(forecast?.totalMonthlyCents ?? 0, ym),
-    [forecast, ym],
+    () => monthlyToDailyCents(applicable?.monthlyCents ?? 0, ym),
+    [applicable, ym],
   );
   const activeDailyCents = paceDaily ?? baselineDailyCents;
 
   const band = useMemo(() => {
-    if (!points || !forecast || forecast.totalMonthlyCents <= 0) return null;
+    if (!points || !applicable || applicable.monthlyCents <= 0) return null;
     // A faixa mede a incerteza do **histórico**. Simulando, o usuário escolheu um
     // número — não há faixa em volta de uma escolha.
     if (paceDaily != null) return null;
     return projectionBand({
       points,
       centralDailyCents: baselineDailyCents,
-      lowDailyCents: monthlyToDailyCents(forecast.lowCents, ym),
-      highDailyCents: monthlyToDailyCents(forecast.highCents, ym),
+      lowDailyCents: monthlyToDailyCents(applicable.lowCents, ym),
+      highDailyCents: monthlyToDailyCents(applicable.highCents, ym),
     });
-  }, [points, forecast, ym, baselineDailyCents, paceDaily]);
+  }, [points, applicable, ym, baselineDailyCents, paceDaily]);
 
   const bandWorstCents = useMemo(
     () => (band && points ? bandLowestAhead(band, points, today) : null),
@@ -211,16 +255,14 @@ export function PanelPage() {
    */
   const burnupBudget = useMemo((): { dailyCents: number; label: string } | null => {
     if (paceDaily != null) return { dailyCents: paceDaily, label: 'simulado' };
-    const independente =
-      forecast?.monthsUsed.some((m) => m !== ym) ?? false;
-    if (independente && baselineDailyCents > 0) {
+    if (estimateIndependent && baselineDailyCents > 0) {
       return { dailyCents: baselineDailyCents, label: 'estimado' };
     }
     if (metrics?.safeDailyCents != null && metrics.safeDailyCents > 0) {
       return { dailyCents: metrics.safeDailyCents, label: 'cabe no caixa' };
     }
     return null;
-  }, [paceDaily, forecast, ym, baselineDailyCents, metrics]);
+  }, [paceDaily, estimateIndependent, baselineDailyCents, metrics]);
 
   const monthBurnup = useMemo(
     () =>
@@ -248,21 +290,76 @@ export function PanelPage() {
             month,
             accountOwnerById,
             personNameById,
-            essentialCategoryIds,
+            personIds: people.map((p) => p.id),
+            sharedCategoryIds: sharedSet,
+            mode: contributionMode,
+            customBps,
           })
         : null,
-    [month, owner, accountOwnerById, personNameById, essentialCategoryIds],
+    [
+      month,
+      owner,
+      accountOwnerById,
+      personNameById,
+      people,
+      sharedSet,
+      contributionMode,
+      customBps,
+    ],
   );
+
+  const sharedCategoryNames = useMemo(
+    () =>
+      [...sharedSet]
+        .map((id) => categoryNameById.get(id))
+        .filter((name): name is string => Boolean(name))
+        .sort(),
+    [sharedSet, categoryNameById],
+  );
+
+  /**
+   * Despesa lançada do mês, pela mesma régua de "Para onde foi".
+   *
+   * `nominalCents`, sem fatura, sem estimado e sem repasse: é o total que a barra
+   * de categorias soma. Serve de base do percentual do aviso de categorização —
+   * quando cada um tinha a sua, a mesma tela dizia "15% da despesa" no aviso e
+   * "19%" na barra, sobre o mesmo mês.
+   */
+  const bookedExpenseCents = useMemo(() => {
+    if (!month) return 0;
+    let total = 0;
+    for (const day of month.days) {
+      for (const event of day.events) {
+        if (event.kind === 'forecast') continue;
+        if (event.internal) continue;
+        if (event.flow === 'transfer') continue;
+        if (event.nominalCents >= 0) continue;
+        total += -event.nominalCents;
+      }
+    }
+    return total;
+  }, [month]);
 
   /**
    * Grupos sem categoria do mês. Sai da própria timeline — as linhas já estão
    * carregadas, e uma query nova poderia divergir do que a tela mostra.
+   *
+   * Inclui **previsto**, não só realizado: a barra de categorias já contava, e o
+   * aviso não — daí os dois números diferentes para "sem categoria". Só linha com
+   * `transactionId` entra, porque ocorrência virtual de série não tem o que
+   * atualizar (e herda a categoria do modelo, então nem aparece aqui).
    */
   const uncategorized = useMemo(() => {
     if (!month) return { groups: [], totalCents: 0 };
     const rows = month.days.flatMap((d) =>
       d.events
-        .filter((e) => e.kind === 'actual' && e.transactionId)
+        .filter(
+          (e) =>
+            e.kind !== 'forecast' &&
+            !e.internal &&
+            !e.virtual &&
+            Boolean(e.transactionId),
+        )
         .map((e) => ({
           id: e.transactionId!,
           description: e.label,
@@ -485,6 +582,7 @@ export function PanelPage() {
             minimumCents={minimumCents}
             closingCents={month.closingCents}
             netCents={month.netCents}
+            estimateIndependent={estimateIndependent}
           />
 
           <TrajectorySection
@@ -506,30 +604,26 @@ export function PanelPage() {
             onPaceChange={setPaceDaily}
             lowestAhead={lowestAheadNow}
             baselineLowestAhead={baselineLowestAhead}
+            scopePersonId={owner}
+            scopeLabel={owner ? (personNameById.get(owner) ?? null) : null}
           />
-
-          {monthTrajectory ? (
-            <TrajectoryChart
-              trajectory={monthTrajectory}
-              minimumCents={minimumCents}
-              currentYm={currentYm}
-              onSelect={setSelectedYm}
-            />
-          ) : null}
 
           {uncategorized.groups.length > 0 ? (
             <UncategorizedSection
               groups={uncategorized.groups}
               ym={ym}
               totalCents={uncategorized.totalCents}
-              monthOutCents={
-                month.bookedOutCents - (metrics.settlementOutCents ?? 0)
-              }
+              monthOutCents={bookedExpenseCents}
               categories={expenseCategories}
             />
           ) : null}
 
-          {split ? <HouseholdSplitCard split={split} /> : null}
+          {split ? (
+            <HouseholdSplitCard
+              split={split}
+              sharedCategoryNames={sharedCategoryNames}
+            />
+          ) : null}
 
           <CommitmentsSection
             metrics={metrics}
@@ -542,29 +636,72 @@ export function PanelPage() {
             }}
           />
 
-          <HabitsSection
-            metrics={metrics}
-            phase={phase}
-            comparison={comparison}
-            sparkline={sparkline}
-            forecast={forecast}
-            ym={ym}
-            categoryNameById={categoryNameById}
-            burnup={monthBurnup}
-            burnupBudgetLabel={burnupBudget?.label}
-            income={metrics.income}
-            runway={runway}
-            onSelectMonth={setSelectedYm}
-          />
+          {/* Camada 4 — entender o mês.
+              Colapsada por padrão: `docs/UX.md` pede "Casa calma · home sem grade
+              de KPIs", e a home tinha treze seções, seis gráficos e ~35 números
+              abertos de uma vez. Nada aqui responde "dá para gastar hoje?" — é
+              contexto, e contexto sob demanda continua acessível sem competir com a
+              decisão pela primeira tela. */}
+          <section className="overflow-hidden rounded-xl border border-border bg-surface">
+            <button
+              type="button"
+              onClick={() => setContextOpen((v) => !v)}
+              aria-expanded={contextOpen}
+              className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-surface-hover"
+            >
+              <ChevronRight
+                className={cn(
+                  'size-4 shrink-0 text-text-muted transition-transform',
+                  contextOpen && 'rotate-90',
+                )}
+                aria-hidden
+              />
+              <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+                Entender o mês
+              </span>
+              <span className="ml-auto text-[11px] text-text-muted">
+                renda, categorias, fatura, trajetória
+              </span>
+            </button>
 
-          <CategoryBars
-            month={month}
-            categoryNameById={categoryNameById}
-            onSelectEvent={(event) => {
-              const occurrence = occurrenceById.get(event.id);
-              if (occurrence) setEditing(occurrence);
-            }}
-          />
+            {contextOpen ? (
+              <div className="space-y-3 border-t border-border p-3">
+                <HabitsSection
+                  metrics={metrics}
+                  phase={phase}
+                  comparison={comparison}
+                  sparkline={sparkline}
+                  forecast={forecast}
+                  applicableForecast={applicable}
+                  ym={ym}
+                  categoryNameById={categoryNameById}
+                  burnup={monthBurnup}
+                  burnupBudgetLabel={burnupBudget?.label}
+                  income={metrics.income}
+                  runway={runway}
+                  onSelectMonth={setSelectedYm}
+                />
+
+                <CategoryBars
+                  month={month}
+                  categoryNameById={categoryNameById}
+                  onSelectEvent={(event) => {
+                    const occurrence = occurrenceById.get(event.id);
+                    if (occurrence) setEditing(occurrence);
+                  }}
+                />
+
+                {monthTrajectory ? (
+                  <TrajectoryChart
+                    trajectory={monthTrajectory}
+                    minimumCents={minimumCents}
+                    currentYm={currentYm}
+                    onSelect={setSelectedYm}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </section>
 
           <section className="overflow-hidden rounded-xl border border-border bg-surface">
             <button

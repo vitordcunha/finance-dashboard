@@ -55,6 +55,17 @@ export type TimelineMonth = {
   bookedOutCents: number;
   /** Saída sintética do `forecast` (mediana do histórico). */
   estimatedOutCents: number;
+  /**
+   * Repasse interno entre as contas do casal, nas duas pontas.
+   *
+   * `inCents` e `bookedOutCents` continuam **brutos**, para `in − out === net`
+   * seguir valendo. Quem quer saber quanto a casa de fato recebeu subtrai:
+   * `inCents − internalInCents`. Sem isso a renda de agosto aparecia como
+   * R$ 16.666 quando entraram R$ 14.400 — a diferença era o rateio dela
+   * atravessando a conta dele.
+   */
+  internalInCents: number;
+  internalOutCents: number;
   /** closing − opening. O que sobrou (ou faltou) no mês — sem estimado. */
   netCents: number;
   /** Algum dia do mês tem evento previsto. */
@@ -114,6 +125,8 @@ export function groupTimeline(input: {
     let outCents = 0;
     let bookedOutCents = 0;
     let estimatedOutCents = 0;
+    let internalInCents = 0;
+    let internalOutCents = 0;
     let hasPlanned = false;
 
     for (const date of dates) {
@@ -123,12 +136,15 @@ export function groupTimeline(input: {
       let dayPlanned = false;
 
       for (const event of events) {
-        if (event.deltaCents >= 0) dayIn += event.deltaCents;
-        else {
+        if (event.deltaCents >= 0) {
+          dayIn += event.deltaCents;
+          if (event.internal) internalInCents += event.deltaCents;
+        } else {
           const abs = -event.deltaCents;
           dayOut += abs;
           if (event.kind === 'forecast') estimatedOutCents += abs;
           else bookedOutCents += abs;
+          if (event.internal) internalOutCents += abs;
         }
         if (event.kind !== 'actual') dayPlanned = true;
         // Estimado só na corrente de alerta.
@@ -165,6 +181,8 @@ export function groupTimeline(input: {
       outCents,
       bookedOutCents,
       estimatedOutCents,
+      internalInCents,
+      internalOutCents,
       netCents: running - openingCents,
       hasPlanned,
     });

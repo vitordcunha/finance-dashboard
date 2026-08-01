@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applicableForecast,
   forecastVariable,
   monthCoverage,
   monthlyToDailyCents,
@@ -60,17 +61,38 @@ describe('forecastVariable', () => {
     expect(f.totalMonthlyCents).toBe(Math.round(100_000 * (31 / 15)));
   });
 
-  it('categoria coberta pelo plano fica de fora', () => {
+  it('a amostra é o histórico puro — o plano não apaga categoria', () => {
+    // Antes o desconto acontecia aqui, e por isso um `Supermercado` cadastrado a
+    // partir de agosto zerava a mediana de Mercado no estimado de **julho**.
     const f = forecastVariable({
       transactions: [
         exp('2026-07-01', 100_000, MERCADO),
         exp('2026-07-31', 429_526, MORADIA),
       ],
       months: ['2026-07'],
-      plannedCategoryIds: new Set([MORADIA]),
     });
 
-    expect(f.byCategory.map((c) => c.categoryId)).toEqual([MERCADO]);
+    expect(f.byCategory.map((c) => c.categoryId).sort()).toEqual(
+      [MERCADO, MORADIA].sort(),
+    );
+    expect(f.totalMonthlyCents).toBe(529_526);
+  });
+
+  it('parcela não é hábito: fica fora da amostra', () => {
+    const f = forecastVariable({
+      transactions: [
+        exp('2026-07-01', 100_000, MERCADO),
+        {
+          date: '2026-07-31',
+          kind: 'expense',
+          amountCents: 35_000,
+          categoryId: null,
+          description: 'Dívida · parcela 1 de 2',
+        },
+      ],
+      months: ['2026-07'],
+    });
+
     expect(f.totalMonthlyCents).toBe(100_000);
   });
 
@@ -276,5 +298,35 @@ describe('forecastVariable — mês corrente como amostra parcial', () => {
     });
     expect(f.monthsUsed).toEqual(['2026-06']);
     expect(f.partialMonthUsed).toBeNull();
+  });
+});
+
+describe('applicableForecast', () => {
+  const sample = forecastVariable({
+    transactions: [
+      exp('2026-07-01', 100_000, MERCADO),
+      exp('2026-07-31', 30_000, MORADIA),
+    ],
+    months: ['2026-07'],
+  });
+
+  it('sem plano, aplica a mediana inteira', () => {
+    const a = applicableForecast(sample, null);
+    expect(a.monthlyCents).toBe(130_000);
+    expect(a.coveredCategoryIds).toEqual([]);
+  });
+
+  it('o previsto do mês tira a categoria da conta', () => {
+    const a = applicableForecast(sample, new Set([MERCADO]));
+    expect(a.monthlyCents).toBe(30_000);
+    expect(a.coveredCategoryIds).toEqual([MERCADO]);
+    expect(a.byCategory.map((c) => c.categoryId)).toEqual([MORADIA]);
+  });
+
+  it('o mesmo estimado rende valores diferentes em meses diferentes', () => {
+    // Julho sem `Supermercado` cadastrado × agosto com — a diferença é o ponto.
+    const julho = applicableForecast(sample, new Set());
+    const agosto = applicableForecast(sample, new Set([MERCADO]));
+    expect(julho.monthlyCents).toBeGreaterThan(agosto.monthlyCents);
   });
 });

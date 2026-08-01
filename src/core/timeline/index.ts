@@ -2,6 +2,7 @@ export {
   buildTimelineEvents,
   occurrenceDelta,
   plannedCategoriesIn,
+  plannedCategoriesByYm,
   timelineMonths,
   type BuildTimelineInput,
   type TimelineEvent,

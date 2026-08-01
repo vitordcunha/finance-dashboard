@@ -4,16 +4,25 @@ import { formatBRL, parseDigits } from '@/core/money';
 import { useSetMinimumBalance } from '@/features/panel/hooks/useMinimumBalance';
 import { cn } from '@/lib/cn';
 
-type Props = { cents: number };
+type Props = {
+  cents: number;
+  /** Lente aberta: cada uma tem o seu colchão. `null` é a casa. */
+  personId?: string | null;
+  /** Nome da lente, para o texto dizer de quem é o colchão. */
+  scopeLabel?: string | null;
+};
 
 /**
  * O colchão fica onde ele é usado, não escondido em ajustes: é o parâmetro que
  * muda a leitura do gráfico logo acima.
+ *
+ * É **por lente**. O mesmo R$ 1.500 aplicado à conta pessoal dela deixava a lente
+ * dela em alerta permanente, e alerta que nunca apaga não é alerta.
  */
-export function MinimumControl({ cents }: Props) {
+export function MinimumControl({ cents, personId, scopeLabel }: Props) {
   const [editing, setEditing] = useState(false);
   const [digits, setDigits] = useState(String(cents || ''));
-  const mutation = useSetMinimumBalance();
+  const mutation = useSetMinimumBalance(personId);
 
   async function save() {
     await mutation.mutateAsync(parseDigits(digits));
@@ -36,15 +45,15 @@ export function MinimumControl({ cents }: Props) {
         <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
         {cents > 0 ? (
           <span>
-            Colchão de <strong className="font-medium text-text">
-              {formatBRL(cents)}
-            </strong>{' '}
+            Colchão{scopeLabel ? ` de ${scopeLabel}` : ''} de{' '}
+            <strong className="font-medium text-text">{formatBRL(cents)}</strong>{' '}
             — abaixo disso o mês acende alerta.
           </span>
         ) : (
           <span>
             Defina um <strong className="font-medium text-text">colchão</strong>{' '}
-            para o app avisar antes de o saldo chegar perto do fim.
+            {scopeLabel ? `para ${scopeLabel} ` : ''}para o app avisar antes de o
+            saldo chegar perto do fim.
           </span>
         )}
         <span className="ml-auto shrink-0 font-mono uppercase tracking-[0.06em]">

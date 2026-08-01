@@ -310,6 +310,135 @@ describe('groupTimeline', () => {
   });
 });
 
+describe('repasse interno (par espelhado do rateio)', () => {
+  const CASAL = new Set(['c6', 'inter']);
+
+  function rateio(labelIn: string, labelOut: string) {
+    return buildTimelineEvents({
+      occurrences: [
+        occ({
+          id: 'out',
+          date: '2026-08-05',
+          kind: 'expense',
+          amountCents: 100_000,
+          description: labelOut,
+          accountId: 'inter',
+        }),
+        occ({
+          id: 'in',
+          date: '2026-08-05',
+          kind: 'income',
+          amountCents: 100_000,
+          description: labelIn,
+          accountId: 'c6',
+        }),
+      ],
+      months: ['2026-08'],
+      today: '2026-07-28',
+      cashAccountIds: CASAL,
+    });
+  }
+
+  it('marca os dois lados mesmo com descrições diferentes', () => {
+    const events = rateio(
+      'Rateio casa · parcela 1 · Greicy',
+      'Rateio casa · parcela 1',
+    );
+    expect(events.every((e) => e.internal)).toBe(true);
+  });
+
+  it('a casa não recebe o próprio repasse', () => {
+    const events = rateio(
+      'Rateio casa · parcela 1 · Greicy',
+      'Rateio casa · parcela 1',
+    );
+    const month = groupTimeline({
+      events,
+      anchorCents: 0,
+      months: ['2026-08'],
+    })[0]!;
+
+    expect(month.inCents).toBe(100_000);
+    expect(month.internalInCents).toBe(100_000);
+    expect(month.internalOutCents).toBe(100_000);
+    // O saldo não muda: saiu de uma conta e chegou na outra.
+    expect(month.netCents).toBe(0);
+  });
+
+  it('mesma conta é estorno, não repasse', () => {
+    const events = buildTimelineEvents({
+      occurrences: [
+        occ({ id: 'a', date: '2026-08-05', kind: 'expense', description: 'Loja' }),
+        occ({ id: 'b', date: '2026-08-05', kind: 'income', description: 'Loja' }),
+      ],
+      months: ['2026-08'],
+      today: '2026-07-28',
+      cashAccountIds: CAIXA,
+    });
+    expect(events.some((e) => e.internal)).toBe(false);
+  });
+
+  it('valores diferentes não são par', () => {
+    const events = buildTimelineEvents({
+      occurrences: [
+        occ({
+          id: 'out',
+          date: '2026-08-05',
+          kind: 'expense',
+          amountCents: 100_000,
+          description: 'Rateio casa',
+          accountId: 'inter',
+        }),
+        occ({
+          id: 'in',
+          date: '2026-08-05',
+          kind: 'income',
+          amountCents: 90_000,
+          description: 'Rateio casa',
+          accountId: 'c6',
+        }),
+      ],
+      months: ['2026-08'],
+      today: '2026-07-28',
+      cashAccountIds: CASAL,
+    });
+    expect(events.some((e) => e.internal)).toBe(false);
+  });
+});
+
+describe('estimado por mês', () => {
+  it('cada mês goteja o seu próprio total', () => {
+    const events = buildTimelineEvents({
+      occurrences: [],
+      months: ['2026-07', '2026-08'],
+      today: '2026-07-28',
+      forecastMonthlyByYm: new Map([
+        ['2026-07', 31_000],
+        ['2026-08', 62_000],
+      ]),
+    });
+
+    const julho = events.filter((e) => e.date.startsWith('2026-07'));
+    const agosto = events.filter((e) => e.date.startsWith('2026-08'));
+
+    // Julho só a partir de amanhã: dias 29, 30 e 31.
+    expect(julho).toHaveLength(3);
+    expect(julho.every((e) => e.deltaCents === -1_000)).toBe(true);
+    expect(agosto).toHaveLength(31);
+    expect(agosto.every((e) => e.deltaCents === -2_000)).toBe(true);
+  });
+
+  it('mês fora do mapa não recebe estimado', () => {
+    const events = buildTimelineEvents({
+      occurrences: [],
+      months: ['2026-07', '2026-08'],
+      today: '2026-07-28',
+      forecastMonthlyByYm: new Map([['2026-08', 31_000]]),
+    });
+    expect(events.some((e) => e.date.startsWith('2026-07'))).toBe(false);
+  });
+});
+
 describe('timelineMonths', () => {
   it('monta a janela em torno do mês corrente', () => {
     expect(timelineMonths('2026-07', 2, 2)).toEqual([

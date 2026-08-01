@@ -6,7 +6,10 @@ export const qk = {
   categories: () => ['categories'] as const,
   settings: () => ['settings'] as const,
   contributionMode: () => ['settings', 'contribution_mode'] as const,
-  minimumBalance: () => ['settings', 'minimum_balance_cents'] as const,
+  minimumBalance: (personId?: string | null) =>
+    ['settings', 'minimum_balance_cents', personId ?? 'casa'] as const,
+  sharedCategories: () =>
+    ['settings', 'household_shared_categories'] as const,
   month: (ym: string) => ['month', ym] as const,
   contributionCustomBps: () =>
     ['settings', 'contribution_custom_bps'] as const,

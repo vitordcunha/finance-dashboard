@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { formatBRL } from '@/core/money';
 import type { MonthMetrics } from '@/core/month-metrics';
 import { PaceCompare } from '@/features/panel/components/PaceCompare';
@@ -13,6 +12,8 @@ type Props = {
   /** Saldo de fechamento — herói do mês passado / futuro sem livre. */
   closingCents: number;
   netCents: number;
+  /** O estimado tem base fora deste mês — ver `PaceCompare`. */
+  estimateIndependent?: boolean;
 };
 
 function dayLabel(iso: string): string {
@@ -20,11 +21,17 @@ function dayLabel(iso: string): string {
 }
 
 /**
- * Herói do mês: a pergunta que abre o app.
+ * Herói do mês: a pergunta que abre o app. **Um** número.
  *
  * Corrente → folga de caixa (piso à frente). Passado/futuro → fechou / fecha com.
- * A sobra do mês (renda − compromissos) fica no rodapé do card — mesma pergunta
- * contábil, sem timing; não compete com o número do herói.
+ *
+ * A sobra do mês morava no rodapé daqui, em corpo grande, e o resultado era um
+ * herói com dois números apontando para lados opostos: `FALTA PARA O COLCHÃO
+ * R$ 1.277,00` em vermelho e, três centímetros abaixo, `SOBRA DO MÊS R$ 3.592,46`.
+ * Os dois estavam certos — um fala de timing de caixa, o outro de contabilidade do
+ * mês — e juntos liam como app quebrado. A sobra continua na barra de renda
+ * comprometida, onde tem o resto da conta ao lado para dar sentido.
+ *
  * PaceCompare cola embaixo para a linha de raciocínio continuar no /dia.
  */
 export function HeroSpendable({
@@ -33,6 +40,7 @@ export function HeroSpendable({
   minimumCents,
   closingCents,
   netCents,
+  estimateIndependent = true,
 }: Props) {
   const hasCushion = minimumCents > 0;
   const belowWord = hasCushion ? 'abaixo do colchão' : 'no vermelho';
@@ -53,7 +61,12 @@ export function HeroSpendable({
                 : `Sobrou ${formatBRL(netCents)} no mês`
           }
         />
-        <PaceCompare metrics={m} phase={phase} layout="stack" />
+        <PaceCompare
+          metrics={m}
+          phase={phase}
+          layout="stack"
+          estimateIndependent={estimateIndependent}
+        />
       </section>
     );
   }
@@ -67,7 +80,12 @@ export function HeroSpendable({
           tone={closingCents < 0 ? 'danger' : 'default'}
           hint="Projeção com o que está cadastrado — o estimado fica no alerta abaixo"
         />
-        <PaceCompare metrics={m} phase={phase} layout="stack" />
+        <PaceCompare
+          metrics={m}
+          phase={phase}
+          layout="stack"
+          estimateIndependent={estimateIndependent}
+        />
       </section>
     );
   }
@@ -109,8 +127,6 @@ export function HeroSpendable({
         estimateHint,
       ].join('');
 
-  const monthFree = m.income?.freeCents ?? null;
-
   return (
     <section className="space-y-2">
       <HeroBlock
@@ -124,38 +140,14 @@ export function HeroSpendable({
         value={formatBRL(Math.abs(m.freeToSpendCents))}
         tone={negative ? 'danger' : 'accent'}
         hint={hint}
-        footer={
-          monthFree != null ? (
-            <MonthSurplusRow freeCents={monthFree} />
-          ) : null
-        }
       />
-      <PaceCompare metrics={m} phase={phase} layout="stack" />
+      <PaceCompare
+          metrics={m}
+          phase={phase}
+          layout="stack"
+          estimateIndependent={estimateIndependent}
+        />
     </section>
-  );
-}
-
-function MonthSurplusRow({ freeCents }: { freeCents: number }) {
-  const negative = freeCents < 0;
-  return (
-    <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-border/70 pt-2.5">
-      <div className="min-w-0">
-        <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-muted">
-          {negative ? 'Faltou no mês' : 'Sobra do mês'}
-        </p>
-        <p className="mt-0.5 text-[11px] leading-snug text-text-muted">
-          Renda − compromissos — sem olhar o timing
-        </p>
-      </div>
-      <p
-        className={cn(
-          'font-display text-lg font-semibold tabular-nums tracking-tight',
-          negative ? 'text-danger' : 'text-text',
-        )}
-      >
-        {formatBRL(Math.abs(freeCents))}
-      </p>
-    </div>
   );
 }
 
@@ -164,13 +156,11 @@ function HeroBlock({
   value,
   hint,
   tone,
-  footer,
 }: {
   label: string;
   value: string;
   hint: string;
   tone: 'default' | 'accent' | 'danger';
-  footer?: ReactNode;
 }) {
   return (
     <div
@@ -199,7 +189,6 @@ function HeroBlock({
         {value}
       </p>
       <p className="mt-1.5 text-[12px] leading-snug text-text-muted">{hint}</p>
-      {footer}
     </div>
   );
 }

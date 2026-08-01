@@ -35,7 +35,9 @@ export function CommitmentsSection({
     tiles.push(
       <MetricTile
         key="lowest"
-        label={phase === 'past' ? 'Menor saldo do mês' : 'Menor saldo à frente'}
+        label={
+          phase === 'past' ? 'Menor saldo do mês' : 'Menor saldo com o agendado'
+        }
         tone={target.belowMinimum ? 'danger' : 'default'}
         value={formatBRL(target.balanceCents)}
         hint={
@@ -49,23 +51,10 @@ export function CommitmentsSection({
     );
   }
 
-  if (m.daysBelowMinimum > 0) {
-    tiles.push(
-      <MetricTile
-        key="below"
-        label={hasCushion ? 'Dias abaixo do colchão' : 'Dias no vermelho'}
-        tone="danger"
-        value={String(m.daysBelowMinimum)}
-        hint={
-          m.firstBelowAhead
-            ? `À frente: ${dayLabel(m.firstBelowAhead)}`
-            : m.firstBelowMinimum
-              ? `Começou no ${dayLabel(m.firstBelowMinimum)}`
-              : undefined
-        }
-      />,
-    );
-  }
+  // `Dias abaixo do colchão` saiu: a contagem assusta (17 num mês que fecha
+  // positivo) e não sugere ação nenhuma. A faixa vermelha do gráfico mostra os
+  // mesmos dias, com o formato e a duração visíveis, e o tile acima já dá o
+  // primeiro dia do furo.
 
   if (phase !== 'past' && m.committedAheadCents > 0) {
     tiles.push(

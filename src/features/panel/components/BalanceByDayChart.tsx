@@ -61,6 +61,7 @@ export function BalanceByDayChart({
   const fillId = `balanceFill-${uid}`;
   const dangerFillId = `balanceDanger-${uid}`;
   const glowId = `balanceGlow-${uid}`;
+  const clipId = `balanceClip-${uid}`;
 
   const [hover, setHover] = useState<DayPoint | null>(null);
   const [pinned, setPinned] = useState<DayPoint | null>(null);
@@ -88,23 +89,35 @@ export function BalanceByDayChart({
   const bandValues = band
     ? band.flatMap((b) => [b.lowCents, b.highCents])
     : [];
-  const rawMin = Math.min(
+  const scaleValues = [
     ...values,
     ...(hasEstimateOverlay ? estimateValues : []),
     ...bandValues,
-    minimumCents,
-    0,
+  ];
+  const rawMin = Math.min(...scaleValues, minimumCents, 0);
+  const dataMax = Math.max(...scaleValues, minimumCents, 0);
+
+  /**
+   * Teto **robusto**: o pico do salário não manda na escala.
+   *
+   * Em julho o saldo passa o mês entre R$ 0 e R$ 3 mil e recebe R$ 11.900 no dia
+   * 31. Com o teto no dado máximo, os trinta dias em que a decisão acontece ficavam
+   * espremidos nos 15% de baixo do gráfico — uma reta rente à base — e o único
+   * traço visível era o penhasco do último dia. O teto vem do percentil 85 dos
+   * saldos, com folga para o colchão; a ponta que passar é **cortada** e anotada,
+   * porque o valor exato dela está no toque e na legenda embaixo.
+   */
+  const robustMax = Math.max(
+    quantile(values, 0.85),
+    minimumCents * 1.6,
+    rawMin + 1,
   );
-  const rawMax = Math.max(
-    ...values,
-    ...(hasEstimateOverlay ? estimateValues : []),
-    ...bandValues,
-    minimumCents,
-    0,
-  );
+  const clipped = dataMax > robustMax * 1.25;
+  const rawMax = clipped ? robustMax : dataMax;
+  const peakIndex = values.indexOf(Math.max(...values));
   const span = Math.max(rawMax - rawMin, 1);
   const min = rawMin - span * 0.14;
-  const max = rawMax + span * 0.14;
+  const max = rawMax + span * (clipped ? 0.06 : 0.14);
 
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
@@ -162,6 +175,9 @@ export function BalanceByDayChart({
   const yMin = y(minimumCents);
   const showMinimum = minimumCents > 0;
   const ticks = buildYTicks(min, max, rawMin, rawMax);
+
+  const troughIsToday =
+    lowest != null && todayIndex >= 0 && points[todayIndex]!.day === lowest.day;
 
   const active = hover ?? pinned;
   const activeDelta = active ? dayDelta(points, active) : null;
@@ -357,6 +373,15 @@ export function BalanceByDayChart({
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
+            {/* Corta a ponta do salário sem deixá-la governar a escala. */}
+            <clipPath id={clipId}>
+              <rect
+                x={PAD_L}
+                y={PAD_T - 2}
+                width={plotW}
+                height={plotH + 4}
+              />
+            </clipPath>
           </defs>
 
           {/* Grade horizontal — lê a escala sem poluir. */}
@@ -424,52 +449,87 @@ export function BalanceByDayChart({
             </>
           ) : null}
 
-          {/* Faixa antes da linha: contexto fica atrás do dado. */}
-          {bandArea ? (
-            <path
-              d={bandArea}
-              className="fill-text-muted/[0.13] stroke-text-muted/25"
-              strokeWidth={1}
-              strokeDasharray="2 3"
-            />
-          ) : null}
-
-          {lastRealIndex >= 0 ? (
-            <>
+          <g clipPath={`url(#${clipId})`}>
+            {/* Faixa antes da linha: contexto fica atrás do dado. */}
+            {bandArea ? (
               <path
-                d={area}
-                fill={`url(#${fillId})`}
-                className="motion-safe:animate-fade-in"
+                d={bandArea}
+                className="fill-text-muted/[0.13] stroke-text-muted/25"
+                strokeWidth={1}
+                strokeDasharray="2 3"
               />
-              <DrawPath d={line(0, lastRealIndex)} className="stroke-accent" />
-            </>
-          ) : null}
+            ) : null}
 
-          {lastRealIndex < points.length - 1 ? (
-            <path
-              d={line(Math.max(lastRealIndex, 0), points.length - 1)}
-              fill="none"
-              className="stroke-text-muted"
-              strokeWidth={2}
-              strokeDasharray="5 4"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              opacity={0.85}
-            />
-          ) : null}
+            {lastRealIndex >= 0 ? (
+              <>
+                <path
+                  d={area}
+                  fill={`url(#${fillId})`}
+                  className="motion-safe:animate-fade-in"
+                />
+                <DrawPath d={line(0, lastRealIndex)} className="stroke-accent" />
+              </>
+            ) : null}
 
-          {/* Alerta: se o ritmo estimado se concretizar. Nunca é a curva do herói. */}
-          {hasEstimateOverlay && lastRealIndex < points.length - 1 ? (
-            <path
-              d={estimateLine(Math.max(lastRealIndex, 0), points.length - 1)}
-              fill="none"
-              className="stroke-warning"
-              strokeWidth={1.5}
-              strokeDasharray="2 4"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              opacity={0.75}
-            />
+            {lastRealIndex < points.length - 1 ? (
+              <path
+                d={line(Math.max(lastRealIndex, 0), points.length - 1)}
+                fill="none"
+                className="stroke-text-muted"
+                strokeWidth={2}
+                strokeDasharray="5 4"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                opacity={0.85}
+              />
+            ) : null}
+
+            {/* Alerta: se o ritmo estimado se concretizar. Nunca é a curva do herói. */}
+            {hasEstimateOverlay && lastRealIndex < points.length - 1 ? (
+              <path
+                d={estimateLine(Math.max(lastRealIndex, 0), points.length - 1)}
+                fill="none"
+                className="stroke-warning"
+                strokeWidth={1.5}
+                strokeDasharray="2 4"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                opacity={0.75}
+              />
+            ) : null}
+
+            {/* Dias de entrada: sem marca, a curva sobe e ninguém sabe por quê. */}
+            {points
+              .filter((p) => p.inCents > 0)
+              .map((p) => (
+                <circle
+                  key={`in-${p.day}`}
+                  cx={x(p.day - 1)}
+                  cy={y(p.balanceCents)}
+                  r={3.25}
+                  className="fill-accent stroke-surface"
+                  strokeWidth={1.5}
+                  opacity={active && active.day !== p.day ? 0.55 : 1}
+                />
+              ))}
+          </g>
+
+          {/* A ponta cortada, anotada: o número existe, só não manda na escala.
+              Ancorado pela borda mais próxima — centralizar no dia 31 jogava metade
+              do texto fora do viewBox. */}
+          {clipped ? (
+            <text
+              x={
+                x(peakIndex) > W / 2
+                  ? W - PAD_R - 2
+                  : PAD_L + 2
+              }
+              y={PAD_T + 10}
+              textAnchor={x(peakIndex) > W / 2 ? 'end' : 'start'}
+              className="fill-accent font-mono text-[11px]"
+            >
+              ↑ {short(dataMax)} · dia {peakIndex + 1}
+            </text>
           ) : null}
 
           {/* Fundo do poço: o dia que decide se o mês aperta. */}
@@ -498,25 +558,11 @@ export function BalanceByDayChart({
                   lowest.belowMinimum ? 'fill-danger' : 'fill-text-muted',
                 )}
               >
-                menor {short(lowest.balanceCents)} · dia {lowest.day}
+                menor {short(lowest.balanceCents)} ·{' '}
+                {troughIsToday ? 'hoje' : `dia ${lowest.day}`}
               </text>
             </g>
           ) : null}
-
-          {/* Dias de entrada: sem marca, a curva sobe e ninguém sabe por quê. */}
-          {points
-            .filter((p) => p.inCents > 0)
-            .map((p) => (
-              <circle
-                key={`in-${p.day}`}
-                cx={x(p.day - 1)}
-                cy={y(p.balanceCents)}
-                r={3.25}
-                className="fill-accent stroke-surface"
-                strokeWidth={1.5}
-                opacity={active && active.day !== p.day ? 0.55 : 1}
-              />
-            ))}
 
           {todayIndex >= 0 ? (
             <>
@@ -537,7 +583,11 @@ export function BalanceByDayChart({
                 strokeWidth={2.5}
                 filter={`url(#${glowId})`}
               />
-              {!active || active.day !== points[todayIndex]!.day ? (
+              {/* Quando hoje **é** o fundo do poço, os dois rótulos caem no mesmo
+                  ponto e o gráfico imprimia `menor 2·hoje dia 28`. Aí quem diz que
+                  é hoje é o rótulo do fundo, que já está ali. */}
+              {(!active || active.day !== points[todayIndex]!.day) &&
+              !troughIsToday ? (
                 <text
                   x={clampLabel(x(todayIndex))}
                   y={Math.max(y(points[todayIndex]!.balanceCents) - 12, PAD_T + 10)}
@@ -778,6 +828,17 @@ function DayDetail({
 /** Mantém rótulo dentro da caixa: no dia 1 e no 31 ele vazaria. */
 function clampLabel(px: number, inset = 44): number {
   return Math.min(Math.max(px, PAD_L + inset), W - PAD_R - inset);
+}
+
+/** Percentil linear simples — só para dimensionar eixo, não para estatística. */
+function quantile(values: ReadonlyArray<number>, q: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const pos = (sorted.length - 1) * q;
+  const low = Math.floor(pos);
+  const high = Math.ceil(pos);
+  if (low === high) return sorted[low]!;
+  return sorted[low]! + (sorted[high]! - sorted[low]!) * (pos - low);
 }
 
 /** Dois ou três ticks úteis — inclui zero quando ele entra no range. */

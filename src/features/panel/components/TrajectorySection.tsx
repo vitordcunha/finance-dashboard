@@ -23,6 +23,9 @@ type Props = {
   /** Fundo do poço à frente no cenário em vigor e no do histórico. */
   lowestAhead: { cents: number; day: number } | null;
   baselineLowestAhead: { cents: number; day: number } | null;
+  /** Lente aberta — o colchão é dela, não da casa. */
+  scopePersonId?: string | null;
+  scopeLabel?: string | null;
 };
 
 /**
@@ -47,6 +50,8 @@ export function TrajectorySection({
   onPaceChange,
   lowestAhead,
   baselineLowestAhead,
+  scopePersonId,
+  scopeLabel,
 }: Props) {
   return (
     <section className="space-y-2">
@@ -60,6 +65,7 @@ export function TrajectorySection({
         band={band}
         onSelectDay={onSelectDay}
       />
+      <MonthDashboard month={month} isCurrent={isCurrent} isFuture={isFuture} />
 
       {/* O piso da faixa é o cenário que decide, e a curva central o esconde. */}
       {band && bandWorstCents != null && lowest ? (
@@ -84,8 +90,11 @@ export function TrajectorySection({
         />
       ) : null}
 
-      <MinimumControl cents={minimumCents} />
-      <MonthDashboard month={month} isCurrent={isCurrent} isFuture={isFuture} />
+      <MinimumControl
+        cents={minimumCents}
+        personId={scopePersonId}
+        scopeLabel={scopeLabel}
+      />
     </section>
   );
 }

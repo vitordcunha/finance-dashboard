@@ -7,10 +7,18 @@
  *
  * Duas séries:
  * - `closingCents` — só lançamentos (realizado + previsto).
- * - `closingWithEstimateCents` — se o variável estimado se concretizar.
+ * - `closingWithEstimateCents` — se o variável estimado se concretizar, **acumulado
+ *   mês a mês**.
  *
- * Sem o estimado, a linha sobe reto por um ano e mente. Com as duas, o olho
- * vê o otimismo do cadastrado e o cenário do ritmo lado a lado.
+ * O acúmulo é o ponto. `TimelineMonth.closingWithEstimateCents` reinicia do caixa
+ * real todo mês, e com razão: o alerta do mês aberto não deve herdar o chute do mês
+ * anterior. Mas numa janela de treze meses isso descontava **um** mês de gasto
+ * variável de treze meses de sobra, e o card anunciava R$ 105.332 de patrimônio em
+ * jul/2027 — o número mais destacado do painel era o menos defensável. Aqui a
+ * segunda série soma o estimado de cada mês projetado ao dos anteriores.
+ *
+ * A âncora continua sendo a série real: `closingCents` é o que abre o mês seguinte.
+ * O chute nunca vira caixa.
  */
 
 import type { TimelineMonth } from '@/core/timeline';
@@ -51,14 +59,21 @@ export function trajectory(input: {
   const minimumCents = input.minimumCents ?? 0;
   if (input.months.length < 2) return null;
 
-  const points: TrajectoryPoint[] = input.months.map((m) => ({
-    ym: m.ym,
-    closingCents: m.closingCents,
-    closingWithEstimateCents: m.closingWithEstimateCents,
-    projected: m.ym >= input.currentYm,
-    belowMinimum: m.closingCents < minimumCents,
-    belowMinimumWithEstimate: m.closingWithEstimateCents < minimumCents,
-  }));
+  // Estimado acumulado: o chute de agosto continua valendo em setembro.
+  let estimatedSoFar = 0;
+  const points: TrajectoryPoint[] = input.months.map((m) => {
+    const projected = m.ym >= input.currentYm;
+    if (projected) estimatedSoFar += m.estimatedOutCents;
+    const withEstimate = m.closingCents - estimatedSoFar;
+    return {
+      ym: m.ym,
+      closingCents: m.closingCents,
+      closingWithEstimateCents: withEstimate,
+      projected,
+      belowMinimum: m.closingCents < minimumCents,
+      belowMinimumWithEstimate: withEstimate < minimumCents,
+    };
+  });
 
   // O pior fechamento só interessa daqui pra frente: passado não se evita.
   let lowest: TrajectoryPoint | null = null;

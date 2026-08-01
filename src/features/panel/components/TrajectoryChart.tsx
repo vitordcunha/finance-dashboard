@@ -28,9 +28,15 @@ function short(cents: number): string {
 /**
  * Fechamento acumulado mês a mês — não o gráfico dia a dia.
  *
- * A fita mostra deltas; esta curva acumula. Cheia = só o cadastrado; pontilhada =
- * se o ritmo estimado se mantiver. Sem a segunda, um ano de sobras mentia
- * riqueza. Fato e projeção se separam por traço a partir do mês corrente.
+ * Cheia = só o cadastrado; tracejada = se o ritmo estimado se mantiver, **somado
+ * mês a mês**.
+ *
+ * O headline mudou de dono. Era `jul 2027 R$ 105.332,25 +97k`: o saldo terminal de
+ * uma janela de treze meses, em corpo destacado, calculado com um único mês de gasto
+ * variável descontado — o número mais visível do painel era o menos defensável, e
+ * ninguém decide nada com o saldo de julho do ano que vem. Agora o headline é o
+ * **pior fechamento à frente**, que é onde alguma decisão cabe, e o terminal desce
+ * para o rodapé com o rótulo do cenário.
  */
 export function TrajectoryChart({
   trajectory: t,
@@ -76,11 +82,14 @@ export function TrajectoryChart({
   const showMinimum = minimumCents > 0;
   const spansYears = points[0]!.ym.slice(0, 4) !== points.at(-1)!.ym.slice(0, 4);
 
-  const headlineCents = t.showsEstimate ? t.endWithEstimateCents : t.endCents;
-  const headlineDelta = t.showsEstimate
-    ? t.deltaWithEstimateCents
-    : t.deltaCents;
-  const growing = headlineDelta >= 0;
+  // O pior mês à frente no cenário que vale: com estimado quando existe.
+  const worst = t.showsEstimate ? t.lowestWithEstimate : t.lowest;
+  const worstCents = worst
+    ? t.showsEstimate
+      ? worst.closingWithEstimateCents
+      : worst.closingCents
+    : null;
+  const endCents = t.showsEstimate ? t.endWithEstimateCents : t.endCents;
   const alertLowest =
     t.showsEstimate && t.lowestWithEstimate
       ? t.lowestWithEstimate.belowMinimumWithEstimate
@@ -97,18 +106,24 @@ export function TrajectoryChart({
           <h3 className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
             Saldo no fim de cada mês
           </h3>
-          <p className="text-[11px] tabular-nums text-text-muted">
-            {formatMonth(points.at(-1)!.ym, 'MMM yyyy')}{' '}
-            <span className="text-text">{formatBRL(headlineCents)}</span>{' '}
-            <span className={growing ? 'text-accent' : 'text-danger'}>
-              {growing ? '+' : '−'}
-              {short(Math.abs(headlineDelta))}
-            </span>
-          </p>
+          {worst && worstCents != null ? (
+            <p className="text-[11px] tabular-nums text-text-muted">
+              pior mês à frente{' '}
+              <span
+                className={cn(
+                  'font-medium',
+                  worstCents < minimumCents ? 'text-danger' : 'text-text',
+                )}
+              >
+                {formatBRL(worstCents)}
+              </span>{' '}
+              em {formatMonth(worst.ym, spansYears ? 'MMM/yy' : 'MMMM')}
+            </p>
+          ) : null}
         </div>
         <p className="text-[11px] leading-snug text-text-muted">
           {t.showsEstimate
-            ? `Número principal: se mantiver o ritmo. Só o cadastrado fecha em ${formatBRL(t.endCents)}.`
+            ? `Mantendo o ritmo, a janela termina em ${formatBRL(endCents)}; só com o que está cadastrado, ${formatBRL(t.endCents)}. Doze meses à frente é ordem de grandeza, não previsão.`
             : 'Fechamento acumulado da janela — não é o gráfico dia a dia.'}
         </p>
       </figcaption>
@@ -258,9 +273,13 @@ export function TrajectoryChart({
             );
           })}
 
-          {/* Só as pontas e o mês corrente: doze rótulos colidem. */}
+          {/* Só as pontas e o mês corrente — e mesmo esses três colidem quando o
+              corrente é o segundo da janela: o gráfico imprimia `jun/2jul/26`.
+              Rótulo a menos de ~52px do anterior não entra. */}
           {[0, splitAt, points.length - 1]
             .filter((i, k, arr) => arr.indexOf(i) === k)
+            .sort((a, b) => a - b)
+            .filter((i, k, kept) => k === 0 || x(i) - x(kept[k - 1]!) > 52)
             .map((i) => (
               <text
                 key={i}
@@ -280,7 +299,7 @@ export function TrajectoryChart({
 
       <p className="border-t border-border px-4 py-2 text-[11px] leading-snug text-text-muted">
         {t.showsEstimate
-          ? 'Verde = só o cadastrado · cinza = se mantiver o ritmo neste mês (o chute não acumula de um mês no outro) · não é o saldo dia a dia.'
+          ? 'Verde = só o cadastrado · cinza = mantendo o ritmo, acumulado mês a mês · não é o saldo dia a dia.'
           : 'Fechamento de cada mês acumulado · não é o saldo dia a dia.'}
       </p>
 

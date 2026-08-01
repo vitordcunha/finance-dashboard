@@ -16,14 +16,42 @@ export type CommitmentShape = {
   /** Ocorrência de recorrência — o valor foi decidido quando a série nasceu. */
   seriesId?: string | null;
   categoryId?: string | null;
+  /**
+   * Descrição do lançamento, para reconhecer parcelamento.
+   *
+   * Opcional porque nem toda chamada tem o texto à mão; sem ele a régua só perde
+   * o caso da parcela avulsa, não muda de significado.
+   */
+  description?: string | null;
+  /** Transferência entre contas do casal — não é gasto de ninguém. */
+  internal?: boolean;
 };
 
-/** Recorrência ou categoria marcada como essencial em Ajustes. */
+/**
+ * Parcela de um compromisso assumido antes.
+ *
+ * `Dívida · parcela 1 de 2` e `Rateio casa · parcela 2` não têm série (cada mês é
+ * uma linha avulsa, com valor próprio) nem categoria essencial — então caíam em
+ * "variável" por eliminação, e o ritmo de gasto passava a incluir dívida e rateio.
+ * O valor de uma parcela foi decidido no dia da compra; nenhum dia deste mês
+ * decidiu nada sobre ela.
+ *
+ * Deliberadamente frouxo (`parcela 2` conta, sem exigir `de 5`): o app escreve o
+ * total quando conhece, e não escreve quando o parcelamento é aberto.
+ */
+const INSTALLMENT = /\bparcela\s*\d+/i;
+
+export function isInstallment(description?: string | null): boolean {
+  return Boolean(description && INSTALLMENT.test(description));
+}
+
+/** Recorrência, parcelamento ou categoria marcada como essencial em Ajustes. */
 export function isCommitment(
   tx: CommitmentShape,
   essentialCategoryIds?: ReadonlySet<string> | null,
 ): boolean {
   if (tx.seriesId) return true;
+  if (isInstallment(tx.description)) return true;
   return Boolean(tx.categoryId && essentialCategoryIds?.has(tx.categoryId));
 }
 
@@ -37,12 +65,14 @@ export type VariableShape = CommitmentShape & {
  *
  * `transfer` fica fora porque pagamento de fatura é **quitação** — as compras
  * aconteceram antes e já contaram no dia em que foram feitas. Contá-las de novo
- * na quitação seria contar duas vezes.
+ * na quitação seria contar duas vezes. Repasse interno também fica fora: o
+ * dinheiro só trocou de conta dentro de casa.
  */
 export function isVariableOutflow(
   tx: VariableShape,
   essentialCategoryIds?: ReadonlySet<string> | null,
 ): boolean {
   if (tx.kind !== 'expense') return false;
+  if (tx.internal) return false;
   return !isCommitment(tx, essentialCategoryIds);
 }

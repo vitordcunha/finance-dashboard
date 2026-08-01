@@ -169,17 +169,19 @@ describe('trajectory', () => {
   function m(
     ym: string,
     closingCents: number,
-    closingWithEstimateCents = closingCents,
+    estimatedOutCents = 0,
   ): TimelineMonth {
     return {
       ym,
       openingCents: 0,
       closingCents,
-      closingWithEstimateCents,
+      closingWithEstimateCents: closingCents - estimatedOutCents,
       inCents: 0,
       outCents: 0,
       bookedOutCents: 0,
-      estimatedOutCents: 0,
+      estimatedOutCents,
+      internalInCents: 0,
+      internalOutCents: 0,
       netCents: 0,
       hasPlanned: false,
       days: [],
@@ -202,17 +204,48 @@ describe('trajectory', () => {
     const t = trajectory({
       months: [
         m('2026-06', 800_000),
-        m('2026-07', 958_479, 900_000),
-        m('2026-08', 1_400_000, 950_000),
+        m('2026-07', 958_479, 58_479),
+        m('2026-08', 1_400_000, 50_000),
       ],
       currentYm: '2026-07',
     })!;
 
     expect(t.showsEstimate).toBe(true);
     expect(t.endCents).toBe(1_400_000);
-    expect(t.endWithEstimateCents).toBe(950_000);
-    expect(t.deltaWithEstimateCents).toBe(150_000);
+    // Agosto desconta o estimado de julho **e** o de agosto: o hábito não
+    // recomeça do zero todo mês.
+    expect(t.endWithEstimateCents).toBe(1_400_000 - 58_479 - 50_000);
+    expect(t.deltaWithEstimateCents).toBe(1_291_521 - 800_000);
     expect(t.lowestWithEstimate!.ym).toBe('2026-07');
+  });
+
+  it('o estimado acumula ao longo da janela', () => {
+    // Doze meses de sobra com um mês de variável descontado era o que fazia a
+    // projeção prometer R$ 105 mil: cada mês reiniciava do caixa real.
+    const t = trajectory({
+      months: [
+        m('2026-07', 100_000, 10_000),
+        m('2026-08', 200_000, 10_000),
+        m('2026-09', 300_000, 10_000),
+      ],
+      currentYm: '2026-07',
+    })!;
+
+    expect(t.points.map((p) => p.closingWithEstimateCents)).toEqual([
+      90_000,
+      180_000,
+      270_000,
+    ]);
+  });
+
+  it('mês fechado não desconta estimado', () => {
+    const t = trajectory({
+      months: [m('2026-06', 800_000, 90_000), m('2026-07', 900_000, 10_000)],
+      currentYm: '2026-07',
+    })!;
+
+    expect(t.points[0]!.closingWithEstimateCents).toBe(800_000);
+    expect(t.points[1]!.closingWithEstimateCents).toBe(890_000);
   });
 
   it('o pior fechamento só conta daqui pra frente', () => {
@@ -346,6 +379,7 @@ describe('IncomeSplit', () => {
 describe('householdSplit', () => {
   const EU = 'eu';
   const GREICY = 'greicy';
+  const PESSOAS = [EU, GREICY];
   const OWNERS = new Map([
     ['c6', EU],
     ['inter', GREICY],
@@ -354,6 +388,9 @@ describe('householdSplit', () => {
     [EU, 'Eu'],
     [GREICY, 'Greicy'],
   ]);
+  const MORADIA = 'moradia';
+  const TRANSPORTE = 'transporte';
+  const CASA = new Set([MORADIA]);
 
   function casa(occurrences: Occurrence[]) {
     const events = buildTimelineEvents({
@@ -369,7 +406,24 @@ describe('householdSplit', () => {
     })[0]!;
   }
 
-  const RATEIO = 'Rateio casa · parcela 1 · Greicy';
+  function dividir(
+    occurrences: Occurrence[],
+    over: {
+      sharedCategoryIds?: Set<string>;
+      mode?: 'income_share' | 'equal_50' | 'custom';
+      customBps?: Record<string, number>;
+    } = {},
+  ) {
+    return householdSplit({
+      month: casa(occurrences),
+      accountOwnerById: OWNERS,
+      personNameById: NAMES,
+      personIds: PESSOAS,
+      sharedCategoryIds: over.sharedCategoryIds ?? CASA,
+      mode: over.mode,
+      customBps: over.customBps,
+    });
+  }
 
   /** Agosto real: salários, aluguel dele, rateio dela em par espelhado. */
   const agosto = [
@@ -408,6 +462,7 @@ describe('householdSplit', () => {
       date: '2026-08-06',
       amountCents: 360_000,
       description: 'Aluguel',
+      categoryId: MORADIA,
       accountId: 'c6',
       seriesId: 's-aluguel',
       status: 'planned',
@@ -419,7 +474,7 @@ describe('householdSplit', () => {
       date: '2026-08-05',
       kind: 'income',
       amountCents: 100_000,
-      description: RATEIO,
+      description: 'Rateio casa · parcela 1 · Greicy',
       accountId: 'c6',
       seriesId: 's-rat',
       status: 'planned',
@@ -435,13 +490,53 @@ describe('householdSplit', () => {
     }),
   ];
 
-  it('rateio não conta como renda de quem recebe', () => {
-    const split = householdSplit({
-      month: casa(agosto),
-      accountOwnerById: OWNERS,
-      personNameById: NAMES,
-    })!;
+  it('o pote são as categorias marcadas, não o que é recorrente', () => {
+    // Transporte dele é recorrente e não é conta da casa. Era exatamente esse tipo
+    // de item que inflava o pote e fazia o card cobrar dela R$ 442,54 a mais.
+    const comTransporte = [
+      ...agosto,
+      occ({
+        id: 'transp',
+        date: '2026-08-10',
+        amountCents: 20_000,
+        description: 'Transporte',
+        categoryId: TRANSPORTE,
+        accountId: 'c6',
+        seriesId: 's-transp',
+        status: 'planned',
+      }),
+    ];
+    expect(dividir(comTransporte)!.houseCostCents).toBe(360_000);
+  });
 
+  it('pagamento de fatura nunca entra no pote', () => {
+    // Ratear a fatura cobraria dela um pedaço das compras pessoais dele — e as
+    // compras da casa dentro dela já contaram no dia em que aconteceram.
+    const comFatura = [
+      ...agosto,
+      occ({
+        id: 'fatura',
+        date: '2026-08-13',
+        kind: 'transfer',
+        amountCents: 200_000,
+        description: 'Pagamento fatura · Cartão principal',
+        categoryId: MORADIA,
+        accountId: 'c6',
+        transferAccountId: 'sicredi',
+        status: 'planned',
+      }),
+    ];
+    expect(dividir(comFatura)!.houseCostCents).toBe(360_000);
+  });
+
+  it('sem categoria marcada não há pote', () => {
+    const split = dividir(agosto, { sharedCategoryIds: new Set() })!;
+    expect(split.needsSharedCategories).toBe(true);
+    expect(split.houseCostCents).toBe(0);
+  });
+
+  it('rateio não conta como renda de quem recebe', () => {
+    const split = dividir(agosto)!;
     const eu = split.people.find((p) => p.personId === EU)!;
     const greicy = split.people.find((p) => p.personId === GREICY)!;
 
@@ -453,83 +548,73 @@ describe('householdSplit', () => {
     expect(greicy.weightBps).toBe(2_910);
   });
 
-  it('cada um deve a sua fatia do compromisso da casa', () => {
-    const split = householdSplit({
-      month: casa(agosto),
-      accountOwnerById: OWNERS,
-      personNameById: NAMES,
-    })!;
-
-    // Aluguel 3.600 — o rateio é pagamento da divisão, não entra no pote.
-    expect(split.houseCostCents).toBe(360_000);
-    expect(split.hasContribution).toBe(true);
-
-    const greicy = split.people.find((p) => p.personId === GREICY)!;
+  it('o ônus é pagar direto + repassar − receber', () => {
+    const split = dividir(agosto)!;
     const eu = split.people.find((p) => p.personId === EU)!;
-    // Ela paga o rateio; ele paga o aluguel e recebe o rateio → ônus líquido.
-    expect(greicy.scheduledOutCents).toBe(100_000);
-    expect(eu.scheduledOutCents).toBe(360_000 - 100_000);
-    expect(greicy.expectedShareCents).toBe(Math.round((360_000 * 2_910) / 10_000));
+    const greicy = split.people.find((p) => p.personId === GREICY)!;
+
+    expect(eu.paidDirectCents).toBe(360_000);
+    expect(eu.receivedCents).toBe(100_000);
+    expect(eu.burdenCents).toBe(260_000);
+
+    expect(greicy.paidDirectCents).toBe(0);
+    expect(greicy.transferredCents).toBe(100_000);
+    expect(greicy.burdenCents).toBe(100_000);
+    expect(split.hasContribution).toBe(true);
   });
 
-  it('parcela avulsa do rateio também conta no agendado', () => {
-    // Parcela 2 na produção é `recurrence: none` — sem seriesId. Antes sumia do
-    // agendado e o card acusava falta mesmo com o valor certo nas linhas.
-    const comP2 = [
-      ...agosto,
-      occ({
-        id: 'rat2-in',
-        date: '2026-08-14',
-        kind: 'income',
-        amountCents: 126_625,
-        description: 'Rateio casa · parcela 2 · Greicy',
-        accountId: 'c6',
-        status: 'planned',
-      }),
-      occ({
-        id: 'rat2-out',
-        date: '2026-08-14',
-        amountCents: 126_625,
-        description: 'Rateio casa · parcela 2',
-        accountId: 'inter',
-        status: 'planned',
-      }),
-    ];
-    const split = householdSplit({
-      month: casa(comP2),
-      accountOwnerById: OWNERS,
-      personNameById: NAMES,
-    })!;
+  it('as cotas somam o pote — sem centavo perdido', () => {
+    const split = dividir(agosto)!;
+    const soma = split.people.reduce((s, p) => s + p.expectedShareCents, 0);
+    expect(soma).toBe(split.houseCostCents);
+  });
 
-    expect(split.houseCostCents).toBe(360_000);
-    const greicy = split.people.find((p) => p.personId === GREICY)!;
+  it('a parcela sugerida é a cota de quem não paga a conta', () => {
+    const split = dividir(agosto)!;
     const eu = split.people.find((p) => p.personId === EU)!;
-    expect(greicy.scheduledOutCents).toBe(100_000 + 126_625);
-    expect(eu.scheduledOutCents).toBe(360_000 - 100_000 - 126_625);
+    const greicy = split.people.find((p) => p.personId === GREICY)!;
+
+    // Quem paga as contas recebe, não transfere.
+    expect(eu.suggestedTransferCents).toBe(0);
+    expect(greicy.suggestedTransferCents).toBe(greicy.expectedShareCents);
+    // E é diferente do que está agendado — é essa diferença que o card mostra.
+    expect(greicy.suggestedTransferCents).not.toBe(greicy.transferredCents);
+  });
+
+  it('o modo escolhido governa o peso', () => {
+    // A tela de Ajustes editava o modo e nenhuma tela lia: escolher 50/50 não
+    // mudava nada em lugar nenhum.
+    const meio = dividir(agosto, { mode: 'equal_50' })!;
+    expect(meio.people.map((p) => p.weightBps)).toEqual([5_000, 5_000]);
+    expect(meio.people[0]!.expectedShareCents).toBe(180_000);
+
+    const custom = dividir(agosto, {
+      mode: 'custom',
+      customBps: { [EU]: 8_000, [GREICY]: 2_000 },
+    })!;
+    expect(
+      custom.people.find((p) => p.personId === GREICY)!.expectedShareCents,
+    ).toBe(72_000);
   });
 
   it('mês sem rateio não acusa ninguém', () => {
-    // Julho: compromisso sai todo da conta dele, ela não repassa nada.
+    // Julho: a conta da casa sai toda da conta dele, ela não repassa nada.
     const semRateio = agosto.filter(
-      (o) => o.id !== 'rat-in' && o.id !== 'rat-out' && o.id !== 'sal-g2',
+      (o) => o.id !== 'rat-in' && o.id !== 'rat-out',
     );
-    const split = householdSplit({
-      month: casa(semRateio),
-      accountOwnerById: OWNERS,
-      personNameById: NAMES,
-    })!;
-
+    const split = dividir(semRateio)!;
     expect(split.hasContribution).toBe(false);
     expect(split.worstDriftCents).toBe(0);
   });
 
   it('uma pessoa só não é divisão', () => {
-    const soEu = agosto.filter((o) => o.accountId === 'c6');
     expect(
       householdSplit({
-        month: casa(soEu),
+        month: casa(agosto),
         accountOwnerById: OWNERS,
         personNameById: NAMES,
+        personIds: [EU],
+        sharedCategoryIds: CASA,
       }),
     ).toBeNull();
   });
@@ -547,13 +632,16 @@ describe('householdSplit', () => {
         accountId: 'c6',
       }),
     ];
-    const split = householdSplit({
-      month: casa(comBonus),
-      accountOwnerById: OWNERS,
-      personNameById: NAMES,
-    })!;
+    const split = dividir(comBonus)!;
     expect(split.people.find((p) => p.personId === EU)!.fixedIncomeCents).toBe(
       950_000,
     );
+  });
+
+  it('sem renda recorrente, o proporcional cai em meio a meio', () => {
+    const semSalario = agosto.filter((o) => o.kind !== 'income');
+    const split = dividir(semSalario)!;
+    expect(split.usedFallback).toBe(true);
+    expect(split.people.map((p) => p.weightBps)).toEqual([5_000, 5_000]);
   });
 });

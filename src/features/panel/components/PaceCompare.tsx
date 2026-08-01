@@ -9,6 +9,16 @@ type Props = {
   phase: Phase;
   /** No herói não usa col-span do grid de métricas. */
   layout?: 'grid' | 'stack';
+  /**
+   * O estimado foi apurado em **outro** mês além deste.
+   *
+   * Sem isso o painel comparava julho com julho: o mês corrente entra na amostra
+   * da mediana (é o que torna o estimado útil quando só há um mês de histórico), e
+   * então "ritmo acima do estimado — mês mais caro que o habitual" era um veredito
+   * sobre o próprio mês que definiu o habitual. O burn-up já se protegia disso; a
+   * comparação por dia, não.
+   */
+  estimateIndependent?: boolean;
 };
 
 type PaceCell = {
@@ -29,14 +39,21 @@ type PaceCell = {
  * cadastrado, e o "cabe por dia" já nasce depois de descontar as contas. Quando
  * o ritmo somava aluguel, o veredito acusava excesso em todo mês.
  */
-export function PaceCompare({ metrics: m, phase, layout = 'grid' }: Props) {
+export function PaceCompare({
+  metrics: m,
+  phase,
+  layout = 'grid',
+  estimateIndependent = true,
+}: Props) {
   const cells: PaceCell[] = [];
 
   if (phase === 'current' && m.dailyBurnCents > 0) {
     const overSafe =
       m.safeDailyCents != null && m.dailyBurnCents > m.safeDailyCents;
     const overEst =
-      m.estimatedDailyCents > 0 && m.dailyBurnCents > m.estimatedDailyCents;
+      estimateIndependent &&
+      m.estimatedDailyCents > 0 &&
+      m.dailyBurnCents > m.estimatedDailyCents;
     cells.push({
       key: 'burn',
       label: 'Ritmo até hoje',
@@ -63,7 +80,9 @@ export function PaceCompare({ metrics: m, phase, layout = 'grid' }: Props) {
       cents: m.estimatedDailyCents,
       hint:
         phase === 'current'
-          ? `Variável nos ${m.daysAhead} dias que faltam`
+          ? estimateIndependent
+            ? `Variável nos ${m.daysAhead} dias que faltam`
+            : `Nos ${m.daysAhead} dias que faltam · apurado neste mês`
           : 'Mediana histórica diluída no mês',
       tone: 'default',
     });
@@ -83,7 +102,7 @@ export function PaceCompare({ metrics: m, phase, layout = 'grid' }: Props) {
   if (cells.length === 0) return null;
   if (layout === 'grid' && cells.length < 2) return null;
 
-  const verdict = paceVerdict(m, phase);
+  const verdict = paceVerdict(m, phase, estimateIndependent);
 
   return (
     <div
@@ -163,16 +182,20 @@ export function PaceCompare({ metrics: m, phase, layout = 'grid' }: Props) {
 function paceVerdict(
   m: MonthMetrics,
   phase: Phase,
+  estimateIndependent: boolean,
 ): { text: string; tone: 'default' | 'accent' | 'warning' } | null {
   if (phase !== 'current') return null;
 
   const burn = m.dailyBurnCents;
   const safe = m.safeDailyCents;
-  const est = m.estimatedDailyCents;
+  // Sem mês independente, comparar ritmo com estimado é comparar o mês com ele
+  // mesmo: o que sobra de honesto é a régua do caixa (`cabe por dia`).
+  const est = estimateIndependent ? m.estimatedDailyCents : 0;
 
   if (burn <= 0) return null;
 
   if (
+    est > 0 &&
     m.headroomBurnDays != null &&
     m.paceGapCents != null &&
     m.paceGapCents > 0
@@ -197,17 +220,24 @@ function paceVerdict(
     };
   }
 
-  if (est > 0 && burn > 0 && burn <= est) {
+  if (est > 0 && burn <= est) {
     return {
       tone: 'accent',
       text: `No ritmo do estimado. A folga acima é só compromisso — o estimado é alerta à parte.`,
     };
   }
 
-  if (safe != null && burn > 0 && burn <= safe) {
+  if (safe != null && burn <= safe) {
     return {
       tone: 'default',
       text: `Dentro do que cabe nos ${m.daysLeft} dias que faltam.`,
+    };
+  }
+
+  if (!estimateIndependent && m.estimatedDailyCents > 0) {
+    return {
+      tone: 'default',
+      text: `Sem mês fechado para comparar: o estimado saiu deste mesmo mês, então "acima do habitual" não teria sentido. A régua aqui é o caixa.`,
     };
   }
 

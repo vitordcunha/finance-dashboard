@@ -15,6 +15,7 @@
 
 import { addMonths, monthRange, type YearMonth } from '@/core/month';
 import { isOverdue, type Occurrence } from '@/core/series';
+import { merchantKey } from '@/core/transactions/grouping';
 
 export type TimelineEventKind = 'actual' | 'planned' | 'forecast';
 
@@ -50,6 +51,15 @@ export type TimelineEvent = {
   estimated?: boolean;
   /** Previsto cujo dia passou sem ninguém confirmar. */
   overdue?: boolean;
+  /**
+   * Repasse entre contas do casal — o par espelhado do rateio.
+   *
+   * Move caixa de uma conta para a outra e some no total da casa. Sem esta marca
+   * a mesma transferência era lida três vezes: renda dele, gasto variável dela e
+   * contribuição no card de divisão. A casa "recebia" R$ 16.666 quando recebeu
+   * R$ 14.400.
+   */
+  internal?: boolean;
 };
 
 /**
@@ -90,6 +100,17 @@ export type BuildTimelineInput = {
    */
   forecastMonthlyCents?: number | null;
   /**
+   * Estimado mensal **por mês**, quando o valor aplicável muda de mês para mês.
+   *
+   * Muda porque a defesa contra dobrar é por mês-alvo: se agosto tem
+   * `Supermercado` cadastrado, o estimado de agosto não deve somar a mediana de
+   * Mercado — mas o de julho, que não tem, deve. Um número único para a janela
+   * inteira fazia o plano de agosto apagar o histórico de julho.
+   *
+   * Ganha de `forecastMonthlyCents`; perde para `forecastDailyCents`.
+   */
+  forecastMonthlyByYm?: ReadonlyMap<string, number> | null;
+  /**
    * Estimado por **dia**, em vez de por mês. Ganha do mensal quando informado.
    *
    * É o que o simulador de ritmo usa: converter R$/dia para um total mensal
@@ -129,12 +150,19 @@ export function buildTimelineEvents(input: BuildTimelineInput): TimelineEvent[] 
     });
   }
 
+  markInternalTransfers(events);
+
   const forecastDaily = input.forecastDailyCents ?? null;
-  const forecastMonthly = input.forecastMonthlyCents ?? 0;
-  if (forecastDaily != null ? forecastDaily > 0 : forecastMonthly > 0) {
+  const forecastByYm = input.forecastMonthlyByYm ?? null;
+  const forecastFlat = input.forecastMonthlyCents ?? 0;
+  if (forecastDaily != null ? forecastDaily > 0 : forecastByYm || forecastFlat > 0) {
     for (const ym of input.months) {
       // Mês encerrado é história: os lançamentos reais já contam.
       if (ym < currentYm) continue;
+
+      const forecastMonthly = forecastByYm
+        ? (forecastByYm.get(ym) ?? 0)
+        : forecastFlat;
 
       const { end } = monthRange(ym);
       const lastDay = Number(end.slice(8, 10));
@@ -192,7 +220,56 @@ export function buildTimelineEvents(input: BuildTimelineInput): TimelineEvent[] 
   return events;
 }
 
-/** Meses cobertos por algum previsto — o estimado não deve dobrar com eles. */
+/**
+ * Marca os pares espelhados de repasse interno.
+ *
+ * O rateio é cadastrado como **par**: saída na conta dela, entrada na conta dele,
+ * mesma data, mesmo valor. O modelo não liga os dois lados — a linha do tempo
+ * nunca credita o *destino* de uma transferência, e é por isso que o rateio não é
+ * `transfer`. Então a evidência disponível é a assinatura.
+ *
+ * A detecção vive **aqui**, e não em cada consumidor, porque era exatamente a
+ * duplicação que fazia `householdSplit` conhecer o par e `metrics` não: a mesma
+ * transferência entrava como renda da casa num lugar e como repasse no outro.
+ *
+ * Exige contas **diferentes**: mesma conta com entrada e saída idênticas no mesmo
+ * dia é estorno, não repasse.
+ */
+function markInternalTransfers(events: TimelineEvent[]): void {
+  const byKey = new Map<
+    string,
+    { inflow: TimelineEvent[]; outflow: TimelineEvent[] }
+  >();
+
+  for (const event of events) {
+    if (event.kind === 'forecast') continue;
+    if (event.flow === 'transfer') continue;
+    if (!event.accountId) continue;
+    // Descrição **normalizada**: os dois lados raramente têm o mesmo texto —
+    // `Rateio casa · parcela 1` × `Rateio casa · parcela 1 · Greicy`.
+    const key = `${event.date}|${Math.abs(event.nominalCents)}|${merchantKey(event.label)}`;
+    const slot = byKey.get(key) ?? { inflow: [], outflow: [] };
+    if (event.flow === 'income') slot.inflow.push(event);
+    else slot.outflow.push(event);
+    byKey.set(key, slot);
+  }
+
+  for (const { inflow, outflow } of byKey.values()) {
+    const taken = new Set<number>();
+    for (const out of outflow) {
+      const match = inflow.findIndex(
+        (candidate, i) =>
+          !taken.has(i) && candidate.accountId !== out.accountId,
+      );
+      if (match < 0) continue;
+      taken.add(match);
+      inflow[match]!.internal = true;
+      out.internal = true;
+    }
+  }
+}
+
+/** Categorias cobertas por um previsto — o estimado não deve dobrar com elas. */
 export function plannedCategoriesIn(
   occurrences: ReadonlyArray<Occurrence>,
 ): Set<string> {
@@ -201,6 +278,30 @@ export function plannedCategoriesIn(
     if (o.status !== 'planned') continue;
     if (o.kind !== 'expense') continue;
     if (o.categoryId) out.add(o.categoryId);
+  }
+  return out;
+}
+
+/**
+ * O mesmo, **por mês**.
+ *
+ * A versão de janela inteira apagava o histórico de uma categoria do estimado de
+ * *todos* os meses porque existia um previsto em *um* deles: o `Supermercado`
+ * cadastrado a partir de agosto zerava a mediana de Mercado em julho, e o painel
+ * anunciava R$ 54/dia de estimado contra R$ 119/dia de ritmo real.
+ */
+export function plannedCategoriesByYm(
+  occurrences: ReadonlyArray<Occurrence>,
+): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const o of occurrences) {
+    if (o.status !== 'planned') continue;
+    if (o.kind !== 'expense') continue;
+    if (!o.categoryId) continue;
+    const ym = o.date.slice(0, 7);
+    const set = out.get(ym) ?? new Set<string>();
+    set.add(o.categoryId);
+    out.set(ym, set);
   }
   return out;
 }

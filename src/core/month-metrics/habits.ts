@@ -3,6 +3,7 @@
  */
 
 import { monthCoverage } from '@/core/forecast';
+import { householdOutCents } from '@/core/month-metrics/metrics';
 import type { TimelineMonth } from '@/core/timeline';
 
 const MIN_COVERAGE = 0.8;
@@ -37,6 +38,6 @@ export function sparklineOutflows(input: {
 
   return closed.slice(-limit).map((m) => ({
     ym: m.ym,
-    bookedOutCents: m.bookedOutCents,
+    bookedOutCents: householdOutCents(m),
   }));
 }

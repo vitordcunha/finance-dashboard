@@ -22,8 +22,10 @@ import {
 import {
   getContributionCustomBps,
   getContributionMode,
+  getSharedCategoryIds,
   setContributionCustomBps,
   setContributionMode,
+  setSharedCategoryIds,
   type ContributionMode,
 } from '@/data/settings';
 import { qk } from '@/data/query-keys';
@@ -76,6 +78,38 @@ export function useSetContributionCustomBps() {
       toast.success('Porcentagens salvas');
     },
     onError: () => toast.error('Não deu para salvar as porcentagens'),
+  });
+}
+
+/**
+ * Categorias que são conta da casa — o pote que o rateio divide.
+ *
+ * Vive em Ajustes porque é uma **decisão**, não um dado: só vocês sabem se o
+ * mercado é da casa e se o transporte é de quem usa. Inferir pelo que é recorrente
+ * era o que fazia o card cobrar a mais de quem paga menos.
+ */
+export function useSharedCategories() {
+  const { householdId } = useHousehold();
+  return useQuery({
+    queryKey: qk.sharedCategories(),
+    enabled: Boolean(householdId),
+    queryFn: () => getSharedCategoryIds(householdId!),
+  });
+}
+
+export function useSetSharedCategories() {
+  const { householdId } = useHousehold();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (categoryIds: string[]) => {
+      if (!householdId) throw new Error('Sem household');
+      return setSharedCategoryIds(householdId, categoryIds);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.sharedCategories() });
+      toast.success('Conta da casa atualizada');
+    },
+    onError: () => toast.error('Não deu para salvar as categorias da casa'),
   });
 }
 

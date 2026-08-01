@@ -102,6 +102,14 @@ export type MonthMetrics = {
   variableOutCents: number;
   /** Saída sintética do forecast. */
   estimatedOutCents: number;
+  /**
+   * Repasse entre as contas do casal — fora de todos os outros baldes.
+   *
+   * Não é gasto da casa: o dinheiro trocou de conta e ficou. Estava caindo em
+   * "variável" (R$ 1.266,25 de rateio aparecendo como gasto discricionário de
+   * agosto) e a mesma transferência ainda inflava a renda do mês.
+   */
+  internalOutCents: number;
 
   biggestExpense: Highlight | null;
   nextIncome: Highlight | null;
@@ -124,6 +132,7 @@ export type MonthMetrics = {
 };
 
 export type IncomeSplit = {
+  /** Entrada da casa, já sem o repasse interno do rateio. */
   incomeCents: number;
   /** Recorrência e categoria essencial. */
   fixedCents: number;
@@ -135,8 +144,11 @@ export type IncomeSplit = {
   estimatedCents: number;
   /**
    * Sobra do mês: renda − compromisso − fatura − variável lançado.
-   * O estimado **não** come esta fatia — mora no alerta.
-   * Sem timing — diferente da folga de caixa (`freeToSpendCents`).
+   *
+   * O estimado **não** come esta fatia — mora no alerta. Sem timing — diferente da
+   * folga de caixa (`freeToSpendCents`). Note que **não** é "renda − compromissos":
+   * o variável já gasto também sai daqui, e a tela dizia a fórmula errada no
+   * rodapé do herói.
    */
   freeCents: number;
   /** (compromisso + fatura) ÷ entrada, em basis points. */
@@ -167,6 +179,10 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
   const isPast = end < today;
   const isFuture = start > today;
   const events = allEvents(month);
+
+  // O que a casa de fato recebeu. O rateio dela chega na conta dele, então
+  // `inCents` cru contava o mesmo dinheiro duas vezes na vida da casa.
+  const incomeCents = month.inCents - month.internalInCents;
 
   const from = isFuture ? start : today;
   const ahead = isPast ? null : lowestAhead(points, from);
@@ -205,6 +221,7 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
   let settlementOutCents = 0;
   let variableOutCents = 0;
   let estimatedOutCents = 0;
+  let internalOutCents = 0;
   let overdueCount = 0;
   let overdueCents = 0;
   let biggestExpense: Highlight | null = null;
@@ -214,16 +231,24 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
     const out = event.deltaCents < 0;
     const abs = Math.abs(event.deltaCents);
     const isForecast = event.kind === 'forecast';
+    // Repasse interno não é entrada nem saída da casa: sai de uma conta e chega
+    // na outra. Fica fora dos baldes, do "ainda vai sair/entrar" e da maior saída.
+    const isInternal = Boolean(event.internal);
 
     if (out) {
       const nature = outflowKind(event, essential);
-      if (nature === 'estimated') estimatedOutCents += abs;
+      if (nature === 'internal') internalOutCents += abs;
+      else if (nature === 'estimated') estimatedOutCents += abs;
       else if (nature === 'settlement') settlementOutCents += abs;
       else if (nature === 'fixed') fixedOutCents += abs;
       else variableOutCents += abs;
 
       // Estimado não “puxou o mês” — é mediana, não lançamento.
-      if (!isForecast && (!biggestExpense || abs > biggestExpense.cents)) {
+      if (
+        !isForecast &&
+        !isInternal &&
+        (!biggestExpense || abs > biggestExpense.cents)
+      ) {
         biggestExpense = { label: event.label, cents: abs, date: event.date };
       }
     }
@@ -234,7 +259,7 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
     }
 
     const future = event.date > today;
-    if (event.kind !== 'actual' && future) {
+    if (event.kind !== 'actual' && future && !isInternal) {
       if (out) {
         if (isForecast) estimatedAheadCents += abs;
         else committedAheadCents += abs;
@@ -243,7 +268,7 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
       }
     }
 
-    if (event.deltaCents > 0 && future && !nextIncome) {
+    if (event.deltaCents > 0 && future && !isInternal && !nextIncome) {
       nextIncome = {
         label: event.label,
         cents: event.deltaCents,
@@ -268,7 +293,10 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
     .filter((d) => d.date <= today)
     .flatMap((d) => d.events)) {
     if (event.kind !== 'actual') continue;
-    if (outflowKind(event, essential) === 'variable') {
+    const nature = outflowKind(event, essential);
+    // Repasse não é ritmo nem "compromisso já pago" — não é gasto.
+    if (nature === 'internal') continue;
+    if (nature === 'variable') {
       if (event.nominalCents < 0) realizedVariableCents += -event.nominalCents;
     } else if (event.deltaCents < 0) {
       realizedCommittedCents += -event.deltaCents;
@@ -332,16 +360,20 @@ export function monthMetrics(input: MonthMetricsInput): MonthMetrics {
     settlementOutCents,
     variableOutCents,
     estimatedOutCents,
+    internalOutCents,
     biggestExpense,
     nextIncome,
     overdueCount,
     overdueCents,
     burnRateBps:
-      month.inCents > 0
-        ? Math.round((month.bookedOutCents / month.inCents) * 10_000)
+      incomeCents > 0
+        ? Math.round(
+            ((month.bookedOutCents - month.internalOutCents) / incomeCents) *
+              10_000,
+          )
         : null,
     income: incomeSplit(
-      month.inCents,
+      incomeCents,
       fixedOutCents,
       settlementOutCents,
       variableOutCents,
@@ -382,7 +414,8 @@ const MIN_COVERAGE = 0.8;
  * comparação, é ruído com aparência de fato.
  *
  * Compara saída **lançada** (`bookedOutCents`), sem o estimado — senão meses
- * futuros com forecast parecem “gastos demais” contra a média.
+ * futuros com forecast parecem “gastos demais” contra a média — e sem o repasse
+ * interno, que não é gasto da casa.
  */
 export function compareToAverage(
   month: TimelineMonth,
@@ -400,14 +433,19 @@ export function compareToAverage(
   if (others.length === 0) return null;
 
   const averageOutCents = Math.round(
-    others.reduce((s, m) => s + m.bookedOutCents, 0) / others.length,
+    others.reduce((s, m) => s + householdOutCents(m), 0) / others.length,
   );
   if (averageOutCents === 0) return null;
 
   return {
     averageOutCents,
     deltaBps: Math.round(
-      ((month.bookedOutCents - averageOutCents) / averageOutCents) * 10_000,
+      ((householdOutCents(month) - averageOutCents) / averageOutCents) * 10_000,
     ),
   };
+}
+
+/** Saída lançada que de fato saiu de casa: sem estimado e sem repasse interno. */
+export function householdOutCents(month: TimelineMonth): number {
+  return month.bookedOutCents - month.internalOutCents;
 }

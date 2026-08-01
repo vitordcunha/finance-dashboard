@@ -38,6 +38,11 @@ function eventCents(event: TimelineEvent): number {
  * a agenda de "Variável estimado −R$ 131,12" em toda linha e afogava as contas
  * de verdade. Agenda é o que você pode conferir, pagar ou remarcar; mediana do
  * histórico não é nenhuma das três. O peso dela no caixa é o gráfico que mostra.
+ *
+ * **Do repasse interno entra só o lado que alguém tem de fazer.** O rateio é um par
+ * (sai da conta dela, chega na dele) e a agenda mostrava os dois: `−R$ 1.000` e
+ * `+R$ 1.000` no mesmo dia, como se a casa perdesse e ganhasse mil reais. A
+ * transferência é uma tarefa, não duas.
  */
 export function upcomingEvents(input: {
   month: TimelineMonth;
@@ -55,10 +60,13 @@ export function upcomingEvents(input: {
     if (day.date < input.today || day.date > until) continue;
     for (const event of day.events) {
       if (event.kind === 'forecast') continue;
+      // Do par espelhado sobra a saída: é ela que alguém precisa executar.
+      if (event.internal && event.flow === 'income') continue;
       const abs = eventCents(event);
       if (abs === 0) continue;
 
-      const income = event.flow === 'income' || event.deltaCents > 0;
+      const income =
+        !event.internal && (event.flow === 'income' || event.deltaCents > 0);
 
       out.push({
         date: event.date,

@@ -32,7 +32,6 @@ function bucketName(
   event: TimelineEvent,
   categoryNameById: Map<string, string>,
 ): string {
-  if (event.kind === 'forecast') return 'Estimado';
   if (event.categoryId) {
     return categoryNameById.get(event.categoryId) ?? 'Sem categoria';
   }
@@ -45,8 +44,15 @@ function bucketName(
  * Uma série só, um tom só: a cor aqui não carrega identidade — quem identifica
  * é o rótulo ao lado da barra. Por isso também não há legenda.
  *
- * O estimado entra como fatia própria (“Estimado”): omiti-lo fazia “Saiu” e a
- * barra discordarem em mês futuro.
+ * Mede **`nominalCents`**, não efeito no caixa. Com o delta, compra no cartão vale
+ * zero e desaparece: o mês inteiro de compras sumia e no lugar aparecia
+ * `Cartão de credito R$ 3.400` — 29% de julho num balde que não diz o que foi
+ * comprado. Com o nominal, cada compra cai na própria categoria no dia em que
+ * aconteceu, e o **pagamento da fatura fica fora** (é quitação do que já contou).
+ *
+ * Fora também: o estimado (chute não disputa ranking com lançamento) e o repasse
+ * interno do rateio, que aparecia como a segunda maior "destinação" de agosto
+ * sendo dinheiro que só trocou de conta.
  *
  * Toque na categoria → sheet com os lançamentos que somam aquele valor.
  */
@@ -62,10 +68,13 @@ export function CategoryBars({
 
   for (const day of month.days) {
     for (const event of day.events) {
-      if (event.deltaCents >= 0) continue;
+      if (event.kind === 'forecast') continue;
+      if (event.internal) continue;
+      if (event.flow === 'transfer') continue;
+      if (event.nominalCents >= 0) continue;
       const name = bucketName(event, categoryNameById);
       const cur = byBucket.get(name) ?? { name, cents: 0, events: [] };
-      cur.cents += -event.deltaCents;
+      cur.cents += -event.nominalCents;
       cur.events.push(event);
       byBucket.set(name, cur);
     }
@@ -199,7 +208,7 @@ export function CategoryBars({
                         <EventTag event={event} />
                       </span>
                       <MoneyText
-                        cents={-event.deltaCents}
+                        cents={-event.nominalCents}
                         className={cn(
                           'w-[88px] shrink-0 text-right text-[13px] tabular-nums',
                           (event.kind !== 'actual' || event.cashless) &&

@@ -97,9 +97,13 @@ export function PaceSimulator({
         <span>{formatBRL(max)}</span>
       </div>
 
+      {/* "Menor saldo à frente" era o rótulo daqui **e** do tile logo abaixo, com
+          números diferentes: aquele é a curva de lançamentos, este inclui o ritmo
+          estimado. Dois valores sob o mesmo nome na mesma tela fazem o usuário
+          concluir que o app não sabe a resposta. */}
       {lowestAheadCents != null ? (
         <p className="mt-2 border-t border-border/70 pt-2 text-[11px] leading-snug text-text-muted">
-          Menor saldo à frente{' '}
+          Neste ritmo, o menor saldo à frente é{' '}
           <span
             className={cn(
               'font-medium tabular-nums',

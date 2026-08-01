@@ -11,8 +11,13 @@
  *    (`core/transactions/commitment`): recorrência, categoria essencial e
  *    pagamento de fatura ficam fora. Sem isso os dois números mediriam coisas
  *    diferentes e o app se contradiria na mesma tela.
- * 2. **Categoria coberta por um previsto não é prevista pelo histórico** —
- *    senão o mesmo gasto conta duas vezes.
+ * 2. **Categoria coberta por um previsto não é prevista pelo histórico** — senão o
+ *    mesmo gasto conta duas vezes. Isso é decidido **na aplicação**
+ *    (`applicableForecast`, por mês-alvo), não na amostragem: quando era decidido
+ *    aqui, um `Supermercado` cadastrado a partir de agosto apagava a mediana de
+ *    Mercado do estimado de **julho**, e o painel anunciava R$ 54/dia de estimado
+ *    contra R$ 119/dia de ritmo medido — os dois números deixavam de falar do
+ *    mesmo conjunto e o app acusava "mês mais caro que o habitual" sem base.
  * 3. **Mês incompleto ou é descartado ou é normalizado.** Um extrato que só
  *    cobre 6 dias de junho não vale como "mês de junho"; usá-lo cru puxaria a
  *    média para baixo e a projeção voltaria a mentir, só que para o outro lado.
@@ -41,6 +46,8 @@ export type ForecastTx = {
   categoryId: string | null;
   /** Ocorrência de recorrência — compromisso, não hábito. */
   seriesId?: string | null;
+  /** Para reconhecer parcelamento: parcela não é hábito, é compromisso. */
+  description?: string | null;
 };
 
 export type CategoryForecast = {
@@ -117,9 +124,9 @@ function median(values: number[]): number {
 }
 
 /**
- * Estima o gasto variável mensal por categoria.
+ * Estima o gasto variável mensal por categoria, a partir do histórico puro.
  *
- * `plannedCategoryIds` = categorias que já têm item ativo no plano.
+ * Não desconta o que o plano cobre — isso é por mês-alvo, em `applicableForecast`.
  */
 export function forecastVariable(input: {
   transactions: ReadonlyArray<ForecastTx>;
@@ -130,7 +137,6 @@ export function forecastVariable(input: {
    * Sem isso, todo mês da lista é tratado como fechado.
    */
   today?: string | null;
-  plannedCategoryIds?: ReadonlySet<string | null> | null;
   /** Categorias essenciais — saída nelas é compromisso, não hábito. */
   essentialCategoryIds?: ReadonlySet<string> | null;
   /** Cobertura mínima para o mês contar. Padrão 0.8. */
@@ -140,7 +146,6 @@ export function forecastVariable(input: {
 }): VariableForecast {
   const minCoverage = input.minCoverage ?? DEFAULT_MIN_COVERAGE;
   const minElapsedDays = input.minElapsedDays ?? DEFAULT_MIN_ELAPSED_DAYS;
-  const planned = input.plannedCategoryIds ?? new Set<string | null>();
   const essential = input.essentialCategoryIds ?? null;
   const today = input.today ?? null;
   const currentYm = today ? today.slice(0, 7) : null;
@@ -203,7 +208,6 @@ export function forecastVariable(input: {
     const monthTotals = new Map<string | null, number>();
     for (const tx of variable) {
       if (tx.date.slice(0, 7) !== ym) continue;
-      if (planned.has(tx.categoryId)) continue;
       monthTotals.set(
         tx.categoryId,
         (monthTotals.get(tx.categoryId) ?? 0) + tx.amountCents,
@@ -255,6 +259,54 @@ export function forecastVariable(input: {
     partialMonthUsed,
     confidence,
   };
+}
+
+export type ApplicableForecast = {
+  monthlyCents: number;
+  lowCents: number;
+  highCents: number;
+  /** Categorias que o plano já cobre neste mês, então saíram da conta. */
+  coveredCategoryIds: string[];
+  /** As que sobraram, na ordem da mediana — o que a tela lista. */
+  byCategory: CategoryForecast[];
+};
+
+/**
+ * O estimado que se aplica a **um** mês.
+ *
+ * A mediana histórica é do hábito inteiro; o que não deve ser somado de novo é a
+ * categoria que aquele mês já tem cadastrada. Como o plano muda de mês para mês,
+ * a subtração é por mês — e não pela janela, que era o que fazia o plano de agosto
+ * apagar o histórico de julho.
+ *
+ * Só desconta a categoria **inteira**: se o previsto de mercado é R$ 1.100 e a
+ * mediana é R$ 1.687, o certo seria estimar os R$ 587 de diferença. Não fazemos
+ * isso porque o previsto pode ser o mês todo ou uma compra pontual, e chutar qual
+ * dos dois produziria número pior que o conservador.
+ */
+export function applicableForecast(
+  forecast: VariableForecast,
+  plannedCategoryIds?: ReadonlySet<string> | null,
+): ApplicableForecast {
+  const planned = plannedCategoryIds ?? null;
+  let monthlyCents = 0;
+  let lowCents = 0;
+  let highCents = 0;
+  const coveredCategoryIds: string[] = [];
+  const byCategory: CategoryForecast[] = [];
+
+  for (const category of forecast.byCategory) {
+    if (category.categoryId && planned?.has(category.categoryId)) {
+      coveredCategoryIds.push(category.categoryId);
+      continue;
+    }
+    monthlyCents += category.monthlyCents;
+    lowCents += category.lowCents;
+    highCents += category.highCents;
+    byCategory.push(category);
+  }
+
+  return { monthlyCents, lowCents, highCents, coveredCategoryIds, byCategory };
 }
 
 /**

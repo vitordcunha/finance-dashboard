@@ -18,11 +18,11 @@ type Props = {
   /** Total sem categoria no mês, para dar tamanho ao problema. */
   totalCents: number;
   /**
-   * Despesa lançada do mês — a base do percentual.
+   * Despesa lançada do mês — a base do percentual, a **mesma** de "Para onde foi".
    *
-   * Sem a fatura: pagamento de fatura não tem categoria a atribuir, então
-   * incluí-lo faria o percentual nunca chegar a zero e discordar de "Para onde
-   * foi", que mede outra coisa.
+   * Sem a fatura (quitação não tem categoria a atribuir), sem o estimado e sem
+   * repasse interno. Quando as duas bases divergiam, a mesma tela dizia 15% aqui e
+   * 19% na barra de categorias sobre o mesmo mês.
    */
   monthOutCents: number;
   categories: CategorySelectOption[];

@@ -1,12 +1,17 @@
 import { useMemo } from 'react';
 import { cashBalanceAt } from '@/core/cashflow';
-import { forecastVariable, type VariableForecast } from '@/core/forecast';
+import {
+  applicableForecast,
+  forecastVariable,
+  type ApplicableForecast,
+  type VariableForecast,
+} from '@/core/forecast';
 import { addMonths, currentYearMonth, monthRange } from '@/core/month';
 import { expandSeries, type Occurrence } from '@/core/series';
 import {
   buildTimelineEvents,
   groupTimeline,
-  plannedCategoriesIn,
+  plannedCategoriesByYm,
   timelineMonths,
   type TimelineMonth,
 } from '@/core/timeline';
@@ -66,6 +71,14 @@ export type PanelResult = {
   /** Data mais recente entre saldos informados (`yyyy-MM-dd`). */
   anchorAsOfDate: string | null;
   forecast: VariableForecast | null;
+  /**
+   * O estimado aplicável a cada mês da janela (corrente em diante).
+   *
+   * A mediana é do hábito; o que se aplica a um mês depende do que aquele mês já
+   * tem cadastrado. Por isso não existe "o estimado" — existe o de julho e o de
+   * agosto, e eles diferem.
+   */
+  applicableForecastByYm: Map<string, ApplicableForecast>;
   categoryNameById: Map<string, string>;
   /** Categorias marcadas como essenciais — saída nelas é compromisso, não hábito. */
   essentialCategoryIds: Set<string>;
@@ -302,21 +315,43 @@ export function usePanel(options: UsePanelOptions = {}): PanelResult {
           amountCents: t.amountCents,
           categoryId: t.categoryId,
           seriesId: t.seriesId,
+          // Parcela não é hábito: sem a descrição, dívida e rateio entravam na
+          // mediana e o estimado passava a prever compromisso.
+          description: t.description,
         })),
       months: historyMonths,
       today,
-      // Categoria já coberta por um previsto não entra na média: seria dobrar.
-      plannedCategoryIds: plannedCategoriesIn(occurrences),
       essentialCategoryIds,
     });
-  }, [
-    rowsQuery.data,
-    scopedRows,
-    historyMonths,
-    occurrences,
-    today,
-    essentialCategoryIds,
-  ]);
+  }, [rowsQuery.data, scopedRows, historyMonths, today, essentialCategoryIds]);
+
+  /**
+   * O estimado que se aplica a cada mês.
+   *
+   * A defesa contra dobrar com o plano é **por mês**: agosto tem `Supermercado`
+   * cadastrado e não deve somar a mediana de Mercado; julho não tem e deve. Quando
+   * a subtração era feita na amostragem, o previsto de agosto apagava o histórico
+   * de julho e o painel comparava R$ 54/dia de estimado com R$ 119/dia de ritmo
+   * medido — dois números de conjuntos diferentes, com veredito em cima.
+   */
+  const applicableForecastByYm = useMemo(() => {
+    const out = new Map<string, ApplicableForecast>();
+    if (!forecast) return out;
+    const plannedByYm = plannedCategoriesByYm(occurrences);
+    for (const ym of months) {
+      if (ym < currentYm) continue;
+      out.set(ym, applicableForecast(forecast, plannedByYm.get(ym) ?? null));
+    }
+    return out;
+  }, [forecast, occurrences, months, currentYm]);
+
+  const forecastMonthlyByYm = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const [ym, applicable] of applicableForecastByYm) {
+      out.set(ym, applicable.monthlyCents);
+    }
+    return out;
+  }, [applicableForecastByYm]);
 
   const grouped = useMemo((): TimelineMonth[] => {
     if (!rowsQuery.data || openingCents == null) return [];
@@ -326,7 +361,7 @@ export function usePanel(options: UsePanelOptions = {}): PanelResult {
       months,
       today,
       cashAccountIds,
-      forecastMonthlyCents: forecast?.totalMonthlyCents ?? 0,
+      forecastMonthlyByYm,
       forecastDailyCents: forecastOverride,
     });
 
@@ -345,7 +380,7 @@ export function usePanel(options: UsePanelOptions = {}): PanelResult {
     months,
     today,
     cashAccountIds,
-    forecast,
+    forecastMonthlyByYm,
     forecastOverride,
     currentYm,
   ]);
@@ -423,6 +458,7 @@ export function usePanel(options: UsePanelOptions = {}): PanelResult {
     unanchoredAccounts,
     anchorAsOfDate,
     forecast,
+    applicableForecastByYm,
     categoryNameById,
     essentialCategoryIds,
     accountOwnerById,

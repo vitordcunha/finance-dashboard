@@ -1,232 +1,215 @@
 /**
- * Como a casa se divide — e se o rateio ainda corresponde à regra.
+ * Como a casa se divide — e qual parcela fecha a conta.
  *
- * A regra é **proporcional à renda fixa**: quem ganha mais paga mais, na mesma
- * proporção. Renda estimada ou eventual fica fora do peso de propósito — variável
- * como base faria a divisão oscilar todo mês.
+ * Duas coisas mudaram em relação à primeira versão, e as duas eram erro de conta,
+ * não de forma.
  *
- * O problema que isto resolve não é exibir a porcentagem, é que ela está
- * **congelada**: o rateio vive como valor em linhas de lançamento, então mudar um
- * salário não recalcula nada e a divisão silenciosamente vira injusta. Aqui a
- * proporção é recomputada do dado e comparada com o que está agendado, para a
- * divergência aparecer.
+ * **1. O pote é declarado, não inferido.** Antes a conta da casa era "tem série ou
+ * categoria essencial", que captura o que é *recorrente*, não o que é
+ * *compartilhado*. Em agosto/2026 isso punha no pote o pagamento do drone da mãe
+ * dele (R$ 500), o transporte dele (R$ 200) e 100% da fatura do cartão dele
+ * (R$ 2.000) — e o card então acusava "Greicy: falta R$ 442,54" sobre um rateio que
+ * estava exatamente na regra combinada. Os R$ 442,54 eram 34,03% de R$ 1.300 de
+ * itens que não são da casa. Seguir o conselho do card faria ela pagar 34% do
+ * transporte dele. Agora o pote são as **categorias marcadas como da casa** em
+ * Ajustes (`household_shared_categories`).
  *
- * Não deriva um veredito de "justiça" da saída total de cada um: o rateio é
- * modelado como par entrada/saída, então o repasse dela infla a saída dela e a
- * entrada dele. Comparar saídas brutas leria o repasse duas vezes.
+ * **2. A política vem de `core/contribution`.** Havia dois motores de rateio: este,
+ * proporcional à renda e fixo, e o de `core/contribution` (proporcional / 50-50 /
+ * personalizado, com arredondamento sem perder centavo) — que a tela de Ajustes
+ * editava e **nenhuma tela lia**. Escolher 50/50 lá não mudava nada em lugar nenhum.
+ * Agora o modo escolhido governa esta conta, e o rateio de centavos usa o
+ * `largest remainder` de lá em vez de `Math.round` por pessoa.
+ *
+ * Mede **`nominalCents`**: a compra da casa no cartão dele pertence ao pote no dia
+ * da compra. E é por isso que o pagamento da fatura fica fora — ratear a fatura
+ * cobraria dela um pedaço das compras pessoais dele, e ainda contaria as compras da
+ * casa duas vezes.
  */
 
+import {
+  computeQuotas,
+  computeShareBps,
+  type ContributionMode,
+} from '@/core/contribution';
 import type { TimelineMonth } from '@/core/timeline';
-import { isCommitment } from '@/core/transactions/commitment';
-import { merchantKey } from '@/core/transactions/grouping';
 
 export type SplitPerson = {
   personId: string;
   name: string;
-  /** Renda recorrente da pessoa no mês — a base do peso. */
+  /** Renda recorrente da pessoa no mês — a base do peso no modo proporcional. */
   fixedIncomeCents: number;
   /** Peso na divisão, em basis points. */
   weightBps: number;
   /** Parte da conta da casa que cabe a ela pela regra. */
   expectedShareCents: number;
-  /** Compromisso que efetivamente sai das contas dela no mês. */
-  scheduledOutCents: number;
+  /** Conta da casa que sai direto das contas dela. */
+  paidDirectCents: number;
+  /** Repasse que ela transfere para a outra pessoa. */
+  transferredCents: number;
+  /** Repasse que ela recebe. */
+  receivedCents: number;
+  /**
+   * Ônus real: o que ela paga da casa, mais o que repassa, menos o que recebe.
+   * É este número que se compara com `expectedShareCents`.
+   */
+  burdenCents: number;
+  /** `burdenCents − expectedShareCents`. Positivo = paga além da proporção. */
+  driftCents: number;
+  /**
+   * Repasse que fecharia a conta dela neste mês.
+   *
+   * `cota − o que ela já paga direto`. Zero para quem paga as contas: essa pessoa
+   * **recebe**, não transfere. É o número que o card oferece, e a resposta para
+   * "quanto deve ser a parcela deste mês" — que antes vivia numa planilha fora do
+   * app e envelhecia em silêncio.
+   */
+  suggestedTransferCents: number;
 };
 
 export type HouseholdSplit = {
   people: SplitPerson[];
-  /** Compromisso da casa no mês — a conta a dividir. */
+  /** Conta da casa no mês — o pote a dividir. */
   houseCostCents: number;
   totalFixedIncomeCents: number;
-  /** Maior divergência entre agendado e devido, em centavos. */
+  /** Maior divergência entre ônus e cota, em centavos. */
   worstDriftCents: number;
-  /**
-   * Existe rateio agendado neste mês.
-   *
-   * Quando não existe, a divisão simplesmente não está em vigor ali — e acusar
-   * "falta R$ 866" seria culpar alguém por um mês em que ninguém combinou nada.
-   */
+  /** Existe repasse agendado neste mês. */
   hasContribution: boolean;
+  /** Política em vigor, para a tela dizer de onde vem o peso. */
+  mode: ContributionMode;
+  /** O modo é proporcional mas ninguém tem renda recorrente → caiu em 1/N. */
+  usedFallback: boolean;
+  /** Nenhuma categoria marcada como da casa: não há pote a dividir. */
+  needsSharedCategories: boolean;
 };
-
-/**
- * O rateio é um **par espelhado**: entrada na conta de um, saída na conta do
- * outro, mesma data, mesmo valor, mesma descrição. Não é renda de ninguém — é
- * dinheiro dela atravessando a conta dele — e contá-lo como renda inflava o peso
- * de quem recebe, exatamente invertendo o que a divisão deveria mostrar.
- *
- * A detecção é por assinatura porque o modelo não liga os dois lados: a
- * transferência só viraria `transfer` quando a linha do tempo souber creditar o
- * destino. Até lá, esta é a única evidência estrutural disponível.
- */
-function internalSignature(
-  date: string,
-  cents: number,
-  description: string,
-): string {
-  // Descrição **normalizada**, não literal: os dois lados do par raramente têm o
-  // mesmo texto. No rateio da casa a saída é "Rateio casa · parcela 1" e a
-  // entrada "Rateio casa · parcela 1 · Greicy" — comparar ao pé da letra não
-  // casava, e o repasse voltava a contar como renda de quem recebe.
-  return `${date}|${Math.abs(cents)}|${merchantKey(description)}`;
-}
 
 export function householdSplit(input: {
   month: TimelineMonth;
   /** Dono de cada conta. Sem dono, a conta é da casa e não entra em ninguém. */
   accountOwnerById: ReadonlyMap<string, string | null>;
   personNameById: ReadonlyMap<string, string>;
-  essentialCategoryIds?: ReadonlySet<string> | null;
+  /** Quem participa da divisão — normalmente quem tem conta própria. */
+  personIds: ReadonlyArray<string>;
+  /** Categorias que são conta da casa. Vazio = nada a dividir. */
+  sharedCategoryIds: ReadonlySet<string>;
+  mode?: ContributionMode;
+  customBps?: Record<string, number> | null;
 }): HouseholdSplit | null {
-  const { month, accountOwnerById, personNameById } = input;
-  const essential = input.essentialCategoryIds ?? null;
+  const { month, accountOwnerById, personNameById, sharedCategoryIds } = input;
+  const mode = input.mode ?? 'income_share';
+
+  if (input.personIds.length < 2) return null;
 
   const fixedIncome = new Map<string, number>();
-  const scheduledOut = new Map<string, number>();
+  const paidDirect = new Map<string, number>();
+  const transferred = new Map<string, number>();
+  const received = new Map<string, number>();
   let houseCostCents = 0;
 
-  const events = month.days.flatMap((d) => d.events);
   const ownerOf = (accountId: string | null) =>
     accountId ? (accountOwnerById.get(accountId) ?? null) : null;
-
-  // Assinaturas de saída, por dono. Uma entrada com assinatura igual saindo da
-  // conta de **outra pessoa** é repasse interno, não renda.
-  const outflowSignatures = new Map<string, Set<string>>();
-  for (const event of events) {
-    if (event.kind === 'forecast' || event.nominalCents >= 0) continue;
-    const owner = ownerOf(event.accountId);
-    if (!owner) continue;
-    const sig = internalSignature(event.date, event.nominalCents, event.label);
-    const set = outflowSignatures.get(sig) ?? new Set<string>();
-    set.add(owner);
-    outflowSignatures.set(sig, set);
-  }
-
-  // Entradas espelhadas — para achar a saída de rateio mesmo quando a parcela
-  // avulsa não tem `seriesId` (parcela 2 era `recurrence: none` e sumia do
-  // "agendado", deixando o card acusar falta eterna).
-  const inflowSignatures = new Map<string, Set<string>>();
-  for (const event of events) {
-    if (event.kind === 'forecast' || event.flow !== 'income') continue;
-    const owner = ownerOf(event.accountId);
-    if (!owner) continue;
-    const sig = internalSignature(event.date, event.nominalCents, event.label);
-    const set = inflowSignatures.get(sig) ?? new Set<string>();
-    set.add(owner);
-    inflowSignatures.set(sig, set);
-  }
-
-  const isMirroredOut = (
-    date: string,
-    cents: number,
-    label: string,
-    owner: string,
-  ) => {
-    const mirrored = inflowSignatures.get(internalSignature(date, cents, label));
-    return Boolean(mirrored && [...mirrored].some((o) => o !== owner));
+  const add = (map: Map<string, number>, key: string | null, cents: number) => {
+    if (!key) return;
+    map.set(key, (map.get(key) ?? 0) + cents);
   };
-
-  // Entradas espelhadas recebidas, por dono — o reembolso reduz o ônus de quem
-  // pagou a conta na própria conta.
-  const mirroredInByOwner = new Map<string, number>();
 
   for (const day of month.days) {
     for (const event of day.events) {
       if (event.kind === 'forecast') continue;
       const owner = ownerOf(event.accountId);
 
+      // Repasse interno: não é conta da casa, é quem já está pagando a sua parte.
+      if (event.internal) {
+        if (event.nominalCents < 0) {
+          add(transferred, owner, -event.nominalCents);
+        } else {
+          add(received, owner, event.nominalCents);
+        }
+        continue;
+      }
+
       if (event.flow === 'income') {
-        if (!owner) continue;
-        const mirrored = outflowSignatures.get(
-          internalSignature(event.date, event.nominalCents, event.label),
-        );
-        if (mirrored && [...mirrored].some((o) => o !== owner)) {
-          // Rateio recebido: alivia o ônus de quem recebe — inclusive parcela
-          // avulsa sem seriesId.
-          mirroredInByOwner.set(
-            owner,
-            (mirroredInByOwner.get(owner) ?? 0) + event.nominalCents,
-          );
-          continue;
-        }
-        // Só recorrência: salário é peso, bônus e reembolso não.
+        // Só recorrência entra no peso: salário é peso, bônus e reembolso não.
+        // Renda eventual como base faria a divisão oscilar todo mês.
         if (!event.seriesId) continue;
-        fixedIncome.set(
-          owner,
-          (fixedIncome.get(owner) ?? 0) + event.nominalCents,
-        );
+        add(fixedIncome, owner, event.nominalCents);
         continue;
       }
 
+      // Quitação de fatura não é conta da casa: as compras dentro dela já
+      // contaram, cada uma na própria categoria e no próprio dia.
+      if (event.flow === 'transfer') continue;
       if (event.nominalCents >= 0) continue;
-      const abs = -event.nominalCents;
-      const mirrored =
-        owner != null &&
-        isMirroredOut(event.date, event.nominalCents, event.label, owner);
-
-      // Rateio pago: ônus de quem reembolsa. Não entra no pote a dividir.
-      if (mirrored) {
-        if (owner) {
-          scheduledOut.set(owner, (scheduledOut.get(owner) ?? 0) + abs);
-        }
+      if (!event.categoryId || !sharedCategoryIds.has(event.categoryId)) {
         continue;
       }
 
-      if (!isCommitment(event, essential)) continue;
-
+      const abs = -event.nominalCents;
       houseCostCents += abs;
-      if (owner) {
-        scheduledOut.set(owner, (scheduledOut.get(owner) ?? 0) + abs);
-      }
+      add(paidDirect, owner, abs);
     }
   }
 
-  // Ônus líquido: quem pagou a conta na própria conta menos o rateio que recebeu.
-  for (const [personId, received] of mirroredInByOwner) {
-    scheduledOut.set(personId, (scheduledOut.get(personId) ?? 0) - received);
+  const incomesByPerson: Record<string, number> = {};
+  for (const personId of input.personIds) {
+    incomesByPerson[personId] = fixedIncome.get(personId) ?? 0;
   }
 
-  const totalFixedIncomeCents = [...fixedIncome.values()].reduce(
-    (s, v) => s + v,
-    0,
-  );
-  // Uma pessoa só não é divisão; sem renda fixa não há peso a calcular.
-  if (fixedIncome.size < 2 || totalFixedIncomeCents <= 0) return null;
+  const share = computeShareBps({
+    mode,
+    personIds: [...input.personIds],
+    incomesByPerson,
+    customBps: input.customBps,
+  });
+  const quotas = computeQuotas(share.shares, houseCostCents);
 
-  const people: SplitPerson[] = [...fixedIncome.entries()]
-    .map(([personId, fixedIncomeCents]) => {
-      const weightBps = Math.round(
-        (fixedIncomeCents / totalFixedIncomeCents) * 10_000,
-      );
+  const people: SplitPerson[] = input.personIds
+    .map((personId) => {
+      const paidDirectCents = paidDirect.get(personId) ?? 0;
+      const transferredCents = transferred.get(personId) ?? 0;
+      const receivedCents = received.get(personId) ?? 0;
+      const expectedShareCents = quotas[personId] ?? 0;
+      const burdenCents =
+        paidDirectCents + transferredCents - receivedCents;
+
       return {
         personId,
         name: personNameById.get(personId) ?? 'Pessoa',
-        fixedIncomeCents,
-        weightBps,
-        expectedShareCents: Math.round((houseCostCents * weightBps) / 10_000),
-        scheduledOutCents: scheduledOut.get(personId) ?? 0,
+        fixedIncomeCents: incomesByPerson[personId] ?? 0,
+        weightBps: share.shares[personId] ?? 0,
+        expectedShareCents,
+        paidDirectCents,
+        transferredCents,
+        receivedCents,
+        burdenCents,
+        driftCents: burdenCents - expectedShareCents,
+        suggestedTransferCents: Math.max(
+          0,
+          expectedShareCents - paidDirectCents,
+        ),
       };
     })
     .sort((a, b) => b.weightBps - a.weightBps);
 
-  // Rateio em vigor = alguém pagou e alguém recebeu o par espelhado.
-  const hasContribution =
-    mirroredInByOwner.size > 0 &&
-    people.some((p) => (scheduledOut.get(p.personId) ?? 0) > 0);
-
-  const worstDriftCents = hasContribution
-    ? people.reduce(
-        (worst, p) =>
-          Math.max(worst, Math.abs(p.scheduledOutCents - p.expectedShareCents)),
-        0,
-      )
-    : 0;
+  const hasContribution = people.some((p) => p.transferredCents > 0);
 
   return {
     people,
     houseCostCents,
-    totalFixedIncomeCents,
-    worstDriftCents,
+    totalFixedIncomeCents: Object.values(incomesByPerson).reduce(
+      (s, v) => s + v,
+      0,
+    ),
+    // Sem repasse agendado a divisão simplesmente não está em vigor no mês, e
+    // acusar "falta R$ 866" seria culpar alguém por um mês em que ninguém
+    // combinou nada.
+    worstDriftCents: hasContribution
+      ? people.reduce((worst, p) => Math.max(worst, Math.abs(p.driftCents)), 0)
+      : 0,
     hasContribution,
+    mode,
+    usedFallback: share.usedFallback,
+    needsSharedCategories: sharedCategoryIds.size === 0,
   };
 }

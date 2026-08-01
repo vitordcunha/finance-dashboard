@@ -26,9 +26,15 @@ function compact(cents: number): string {
 /**
  * Todos os meses de relance, para escolher qual abrir.
  *
- * Resultado do mês é polaridade, não identidade: a barra cresce a partir de uma
- * linha zero e o rótulo leva sinal. Quem não distingue verde de vermelho lê pela
- * posição e pelo sinal, sem depender da cor.
+ * **É navegação, não gráfico.** A versão anterior desenhava uma barra por mês a
+ * partir de um eixo zero, ocupando 80px de altura no lugar mais valioso da tela —
+ * acima do herói — para codificar o resultado do mês. Só que os resultados são
+ * todos parecidos (+7k a +8,9k na janela real), então as catorze barras tinham
+ * praticamente a mesma altura: muita área, nenhuma comparação. O sinal do número
+ * já diz o que a barra dizia, e a trajetória acumulada em "Entender o mês" mostra a
+ * forma de verdade.
+ *
+ * O sinal vem no texto, não só na cor: quem não distingue verde de vermelho lê.
  */
 export function MonthStrip({ months, selectedYm, currentYm, onSelect }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -42,8 +48,6 @@ export function MonthStrip({ months, selectedYm, currentYm, onSelect }: Props) {
     });
   }, [selectedYm]);
 
-  const peak = Math.max(1, ...months.map((m) => Math.abs(m.netCents)));
-
   return (
     <div
       ref={scroller}
@@ -56,7 +60,6 @@ export function MonthStrip({ months, selectedYm, currentYm, onSelect }: Props) {
           const selected = month.ym === selectedYm;
           const isCurrent = month.ym === currentYm;
           const positive = month.netCents >= 0;
-          const height = Math.round((Math.abs(month.netCents) / peak) * 26);
 
           return (
             <button
@@ -67,10 +70,10 @@ export function MonthStrip({ months, selectedYm, currentYm, onSelect }: Props) {
               aria-selected={selected}
               onClick={() => onSelect(month.ym)}
               className={cn(
-                'w-[62px] shrink-0 rounded-lg border px-1 py-2 transition-colors',
+                'shrink-0 rounded-lg border px-2.5 py-1.5 transition-colors',
                 selected
                   ? 'border-accent/50 bg-accent-muted'
-                  : 'border-transparent hover:bg-surface-hover',
+                  : 'border-border/60 hover:bg-surface-hover',
               )}
             >
               <span
@@ -85,32 +88,14 @@ export function MonthStrip({ months, selectedYm, currentYm, onSelect }: Props) {
               >
                 {shortMonth(month.ym)}
               </span>
-
-              {/* Eixo zero no meio: acima sobrou, abaixo faltou. */}
-              <span className="mt-1.5 flex h-[56px] flex-col items-center justify-center">
-                <span className="flex h-[26px] w-full items-end justify-center">
-                  {positive ? (
-                    <span
-                      className="w-4 rounded-t-[3px] bg-accent"
-                      style={{ height: `${Math.max(height, 2)}px` }}
-                    />
-                  ) : null}
-                </span>
-                <span className="h-px w-full bg-border-strong" />
-                <span className="flex h-[26px] w-full items-start justify-center">
-                  {!positive ? (
-                    <span
-                      className="w-4 rounded-b-[3px] bg-danger"
-                      style={{ height: `${Math.max(height, 2)}px` }}
-                    />
-                  ) : null}
-                </span>
-              </span>
-
               <span
                 className={cn(
-                  'mt-1 block text-[10px] tabular-nums',
-                  positive ? 'text-text-muted' : 'text-danger',
+                  'mt-0.5 block text-[11px] tabular-nums',
+                  selected
+                    ? 'text-text'
+                    : positive
+                      ? 'text-text-muted'
+                      : 'text-danger',
                 )}
               >
                 {compact(month.netCents)}
